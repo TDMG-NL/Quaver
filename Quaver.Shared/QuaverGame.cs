@@ -59,6 +59,7 @@ using Quaver.Shared.Screens.Options;
 using Quaver.Shared.Screens.Selection;
 using Quaver.Shared.Screens.Selection.UI.FilterPanel;
 using Quaver.Shared.Screens.Tests.AutoMods;
+using Quaver.Shared.Screens.Tests.ButtonPerformance;
 using Quaver.Shared.Screens.Tests.Border;
 using Quaver.Shared.Screens.Tests.Chat;
 using Quaver.Shared.Screens.Tests.CheckboxContainers;
@@ -108,6 +109,7 @@ using Wobble.Extended.HotReload.Screens;
 using Wobble.Graphics;
 using Wobble.Graphics.UI.Debugging;
 using Wobble.Graphics.UI.Dialogs;
+using Wobble.Graphics.UI.Tooltips;
 using Wobble.Input;
 using Wobble.IO;
 using Wobble.Logging;
@@ -264,6 +266,7 @@ namespace Quaver.Shared
             {"MultiplayerGameScreen", typeof(MultiplayerGameScreen)},
             {"MultiplayerLobbyScreen", typeof(MultiplayerLobbyScreen)},
             {"CheckboxContainer", typeof(TestCheckboxContainerScreen)},
+            {"ButtonPerformance", typeof(ButtonPerformanceTestScreen)},
         };
 
         public QuaverGame(HotLoader hl) : base(hl, ConfigureSdlVideoBackend())
@@ -312,6 +315,10 @@ namespace Quaver.Shared
             WindowManager.ChangeBaseResolution(new Vector2(1920, 1080));
             QuaverLocalization.Configure(ConfigManager.Language.Value);
             Resources.AddStore(new DllResourceStore("Quaver.Resources.dll"));
+
+#if VISUAL_TESTS
+            Fonts.LoadWobbleFonts();
+#endif
 
             Graphics.IsFullScreen = ConfigManager.WindowFullScreen.Value;
             Window.IsBorderless = ConfigManager.WindowBorderless.Value;
@@ -370,8 +377,11 @@ namespace Quaver.Shared
             ConfigManager.WriteConfigFileAsync().Wait();
             Transitioner.Dispose();
             DiscordHelper.Shutdown();
+            TooltipManager.TargetEligibilityFilter = null;
             base.UnloadContent();
-            SteamAPI.Shutdown();
+
+            if (SteamManager.IsInitialized)
+                SteamAPI.Shutdown();
         }
 
         /// <inheritdoc />
@@ -397,6 +407,7 @@ namespace Quaver.Shared
                 // be initialized
                 OnlineHub = new OnlineHub();
                 OnlineChat = new OnlineChat();
+                TooltipManager.TargetEligibilityFilter = target => OnlineChat.AllowsTooltip(target);
                 VolumeController = new VolumeControl();
                 FirstUpdateCalled = true;
             }
@@ -406,7 +417,6 @@ namespace Quaver.Shared
 
             BackgroundHelper.Update(gameTime);
             DialogManager.Update(gameTime);
-            OnlineChat?.UpdateEventProcessingSuspension();
 
             HandleGlobalInput(gameTime);
             HandleOnlineHubInput();
@@ -449,6 +459,10 @@ namespace Quaver.Shared
             NotificationManager.Draw(gameTime);
             VolumeController?.Draw(gameTime);
             GlobalUserInterface.Draw(gameTime);
+
+            // F8 chat belongs to global UI, which draws after Wobble's normal tooltip layer.
+            if (OnlineChat?.IsOpen == true)
+                TooltipManager.Draw(gameTime);
 
             Transitioner.Draw(gameTime);
 
