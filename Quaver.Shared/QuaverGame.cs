@@ -126,83 +126,6 @@ namespace Quaver.Shared
     public class QuaverGame : WobbleGame
 #endif
     {
-        #region Win32 multi-monitor P/Invoke
-
-        /// <summary>
-        ///     Win32 flag that returns the monitor nearest to the given point.
-        /// </summary>
-        private const int MONITOR_DEFAULTTONEAREST = 2;
-
-        /// <summary>
-        ///     Win32 POINT structure used for multi-monitor lookups.
-        /// </summary>
-        [StructLayout(LayoutKind.Sequential)]
-        private struct POINT { public int X, Y; }
-
-        /// <summary>
-        ///     Win32 RECT structure representing a rectangle with left, top, right, and bottom edges.
-        /// </summary>
-        [StructLayout(LayoutKind.Sequential)]
-        private struct RECT { public int Left, Top, Right, Bottom; }
-
-        /// <summary>
-        ///     Win32 MONITORINFO structure containing monitor geometry and work area bounds.
-        /// </summary>
-        [StructLayout(LayoutKind.Sequential)]
-        private struct MONITORINFO
-        {
-            public int Size;
-            public RECT Monitor;
-            public RECT WorkArea;
-            public int Flags;
-        }
-
-        /// <summary>
-        ///     Retrieves a handle to the display monitor that contains or is nearest to the specified point.
-        /// </summary>
-        /// <param name="pt"></param>
-        /// <param name="flags"></param>
-        /// <returns></returns>
-        [DllImport("user32.dll")]
-        private static extern IntPtr MonitorFromPoint(POINT pt, int flags);
-
-        /// <summary>
-        ///     Retrieves information about a display monitor.
-        /// </summary>
-        /// <param name="hMonitor"></param>
-        /// <param name="lpmi"></param>
-        /// <returns></returns>
-        [DllImport("user32.dll")]
-        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
-
-        #endregion
-
-        #region SDL2 multi-monitor P/Invoke
-
-        /// <summary>
-        ///     SDL2 rectangle structure used for display bounds queries.
-        /// </summary>
-        [StructLayout(LayoutKind.Sequential)]
-        private struct SDL_Rect { public int x, y, w, h; }
-
-        /// <summary>
-        ///     Returns the number of available video displays.
-        /// </summary>
-        /// <returns></returns>
-        [DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int SDL_GetNumVideoDisplays();
-
-        /// <summary>
-        ///     Gets the desktop area bounds of a display, with position relative to the primary monitor.
-        /// </summary>
-        /// <param name="displayIndex"></param>
-        /// <param name="rect"></param>
-        /// <returns></returns>
-        [DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int SDL_GetDisplayBounds(int displayIndex, out SDL_Rect rect);
-
-        #endregion
-
         /// <summary>
         ///     Scaling factor for skin values and scroll speed to convert them to the UI redesign coordinate system.
         /// </summary>
@@ -214,7 +137,7 @@ namespace Quaver.Shared
         ///     so this is captured beforehand (while still windowed) and used to restore the window to the
         ///     correct monitor when full screen is turned back off.
         /// </summary>
-        private MonitorBounds? _fullScreenMonitorBounds;
+        private MonitorHelper.Bounds? _fullScreenMonitorBounds;
 
         /// <summary>
         ///     Debounce delay (ms) for windowed resize events, so an animated snap/tile doesn't
@@ -237,7 +160,7 @@ namespace Quaver.Shared
         ///     syncs the backbuffer immediately, so by the time the debounce fires, comparing against
         ///     the live size would miss the change.
         /// </summary>
-        private Point _pendingOldBackBufferSize;
+        private Point _preResizeBackBufferSize;
 
         /// <inheritdoc />
         /// <summary>
@@ -592,7 +515,7 @@ namespace Quaver.Shared
 
             _pendingClientSizeChange = false;
 
-            ChangeResolution(false, _pendingOldBackBufferSize);
+            ChangeResolution(centerWindow: false, preResizeBackBufferSize: _preResizeBackBufferSize);
         }
 
         /// <inheritdoc />
@@ -688,7 +611,7 @@ namespace Quaver.Shared
                 {
                     var centerX = Window.Position.X + Window.ClientBounds.Width / 2;
                     var centerY = Window.Position.Y + Window.ClientBounds.Height / 2;
-                    _fullScreenMonitorBounds = GetMonitorBoundsAtPoint(centerX, centerY);
+                    _fullScreenMonitorBounds = MonitorHelper.GetBoundsAtPoint(centerX, centerY);
 
                     Graphics.IsFullScreen = true;
                 }
@@ -698,7 +621,7 @@ namespace Quaver.Shared
                     Graphics.ApplyChanges();
 
                     if (_fullScreenMonitorBounds.HasValue)
-                        CenterWindowOnMonitor(_fullScreenMonitorBounds.Value, ConfigManager.WindowWidth.Value, ConfigManager.WindowHeight.Value);
+                        MonitorHelper.CenterOnMonitor(Window, _fullScreenMonitorBounds.Value, ConfigManager.WindowWidth.Value, ConfigManager.WindowHeight.Value);
 
                     _fullScreenMonitorBounds = null;
                     Window.IsBorderless = ConfigManager.WindowBorderless.Value;
@@ -1310,8 +1233,8 @@ namespace Quaver.Shared
         /// display and the volume controller is recreated.
         /// </summary>
         /// <param name="centerWindow">Whether to recenter the window after applying the change.</param>
-        /// <param name="knownOldBackBufferSize">Old backbuffer size to diff against, if not the live value.</param>
-        public void ChangeResolution(bool centerWindow = true, Point? knownOldBackBufferSize = null)
+        /// <param name="preResizeBackBufferSize">Old backbuffer size to diff against, if not the live value.</param>
+        public void ChangeResolution(bool centerWindow = true, Point? preResizeBackBufferSize = null)
         {
             if (!QuaverWindowManager.CanChangeResolutionOnScene)
                 return;
@@ -1320,8 +1243,8 @@ namespace Quaver.Shared
             var targetHeight = ConfigManager.WindowHeight.Value;
 
             var oldPos = Window.Position;
-            var oldWidth = knownOldBackBufferSize?.X ?? Graphics.PreferredBackBufferWidth;
-            var oldHeight = knownOldBackBufferSize?.Y ?? Graphics.PreferredBackBufferHeight;
+            var oldWidth = preResizeBackBufferSize?.X ?? Graphics.PreferredBackBufferWidth;
+            var oldHeight = preResizeBackBufferSize?.Y ?? Graphics.PreferredBackBufferHeight;
 
             if (oldWidth != targetWidth || oldHeight != targetHeight)
             {
@@ -1338,7 +1261,7 @@ namespace Quaver.Shared
             Graphics.ApplyChanges();
 
             if (centerWindow)
-                CenterWindowOnCurrentMonitor(oldPos, oldWidth, oldHeight, targetWidth, targetHeight);
+                MonitorHelper.CenterOnCurrentMonitor(Window, oldPos, oldWidth, oldHeight, targetWidth, targetHeight);
 
             if (CurrentScreen == null)
                 return;
@@ -1377,104 +1300,6 @@ namespace Quaver.Shared
             VolumeController = new VolumeControl();
         }
 
-        /// <summary>
-        ///     The bounds of a monitor, in desktop coordinates.
-        /// </summary>
-        private struct MonitorBounds
-        {
-            public int Left, Top, Right, Bottom;
-            public int Width => Right - Left;
-            public int Height => Bottom - Top;
-        }
-
-        /// <summary>
-        ///     Finds the bounds of the monitor containing the given desktop point.
-        ///     On Windows, uses Win32 MonitorFromPoint. On macOS/Linux, uses SDL2 display bounds enumeration.
-        /// </summary>
-        private static MonitorBounds? GetMonitorBoundsAtPoint(int x, int y)
-        {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                var monitor = MonitorFromPoint(new POINT { X = x, Y = y }, MONITOR_DEFAULTTONEAREST);
-                var info = new MONITORINFO { Size = Marshal.SizeOf<MONITORINFO>() };
-
-                if (GetMonitorInfo(monitor, ref info))
-                {
-                    return new MonitorBounds
-                    {
-                        Left = info.Monitor.Left,
-                        Top = info.Monitor.Top,
-                        Right = info.Monitor.Right,
-                        Bottom = info.Monitor.Bottom
-                    };
-                }
-
-                return null;
-            }
-
-            try
-            {
-                var displayCount = SDL_GetNumVideoDisplays();
-
-                for (var i = 0; i < displayCount; i++)
-                {
-                    if (SDL_GetDisplayBounds(i, out var bounds) != 0)
-                        continue;
-
-                    if (x < bounds.x || x >= bounds.x + bounds.w ||
-                        y < bounds.y || y >= bounds.y + bounds.h)
-                        continue;
-
-                    return new MonitorBounds
-                    {
-                        Left = bounds.x,
-                        Top = bounds.y,
-                        Right = bounds.x + bounds.w,
-                        Bottom = bounds.y + bounds.h
-                    };
-                }
-            }
-            catch (DllNotFoundException)
-            {
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        ///     Centers the game window within the given monitor bounds.
-        /// </summary>
-        private void CenterWindowOnMonitor(MonitorBounds bounds, int targetWidth, int targetHeight)
-        {
-            var x = bounds.Left + (bounds.Width - targetWidth) / 2;
-            var y = bounds.Top + (bounds.Height - targetHeight) / 2;
-            Window.Position = new Point(x, y);
-        }
-
-        /// <summary>
-        ///     Centers the game window on the monitor it was previously on.
-        /// </summary>
-        /// <param name="oldPos">The window position before the resolution change.</param>
-        /// <param name="oldWidth">The window width before the resolution change.</param>
-        /// <param name="oldHeight">The window height before the resolution change.</param>
-        /// <param name="targetWidth">The new target window width.</param>
-        /// <param name="targetHeight">The new target window height.</param>
-        private void CenterWindowOnCurrentMonitor(Point oldPos, int oldWidth, int oldHeight, int targetWidth, int targetHeight)
-        {
-            var centerX = oldPos.X + oldWidth / 2;
-            var centerY = oldPos.Y + oldHeight / 2;
-
-            var bounds = GetMonitorBoundsAtPoint(centerX, centerY);
-
-            if (bounds.HasValue)
-            {
-                CenterWindowOnMonitor(bounds.Value, targetWidth, targetHeight);
-                return;
-            }
-
-            Window.Position = new Point(centerX - targetWidth / 2, centerY - targetHeight / 2);
-        }
-
         private void OnClientSizeChanged(object sender, EventArgs e)
         {
             // Fullscreen reports the monitor's size here, not a real resize.
@@ -1483,7 +1308,7 @@ namespace Quaver.Shared
 
             // Capture the pre-resize size once per sequence, before Wobble's handler syncs it.
             if (!_pendingClientSizeChange)
-                _pendingOldBackBufferSize = new Point(Graphics.PreferredBackBufferWidth, Graphics.PreferredBackBufferHeight);
+                _preResizeBackBufferSize = new Point(Graphics.PreferredBackBufferWidth, Graphics.PreferredBackBufferHeight);
 
             ConfigManager.WindowWidth.Value = Window.ClientBounds.Width;
             ConfigManager.WindowHeight.Value = Window.ClientBounds.Height;
