@@ -141,7 +141,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
             ImGui.SetNextWindowSizeConstraints(new Vector2(356, 0), new Vector2(600, float.MaxValue));
             ImGui.PushFont(Options.Fonts.First().Context);
             ((IColoredImGuiTitle)this).ImGuiPushTitleColors();
-            ImGui.Begin(Name);
+            EditorImGui.Begin(this, Name);
 
             DrawHeaderText();
             ImGui.Dummy(new Vector2(0, 10));
@@ -264,7 +264,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
                 ImGui.BeginTooltip();
                 ImGui.PushTextWrapPos(300);
                 ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_ScrollSpeedFactorMultiplierHelp"));
-                ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_ScrollSpeedFactorInteractionHelp"));
+                ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_ScrollPointInteractionHelp", LocalizationManager.Get("Screen_Editor_Ssf")));
                 ImGui.PopTextWrapPos();
                 ImGui.EndTooltip();
             }
@@ -346,7 +346,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
         /// </summary>
         private void DrawSelectCurrentSSFButton()
         {
-            if (ImGui.Button(LocalizationManager.Get("Screen_Editor_SelectCurrentSsf")))
+            if (ImGui.Button(LocalizationManager.Get("Screen_Editor_SelectCurrentScrollPoint", LocalizationManager.Get("Screen_Editor_Ssf"))))
             {
                 var currentPointIndex = SelectedScrollGroup.ScrollSpeedFactors.IndexAtTime((float)Screen.Track.Time);
                 if (currentPointIndex >= 0)
@@ -387,7 +387,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
             {
                 ImGui.BeginTooltip();
                 ImGui.PushTextWrapPos(ImGui.GetFontSize() * 25);
-                ImGui.Text(LocalizationManager.Get("Screen_Editor_SelectCurrentSsfTooltip"));
+                ImGui.Text(LocalizationManager.Get("Screen_Editor_SelectCurrentScrollPointTooltip", LocalizationManager.Get("Screen_Editor_Ssf")));
                 ImGui.PopTextWrapPos();
                 ImGui.EndTooltip();
             }

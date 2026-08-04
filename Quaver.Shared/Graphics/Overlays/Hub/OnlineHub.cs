@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Xna.Framework;
@@ -58,6 +59,10 @@ namespace Quaver.Shared.Graphics.Overlays.Hub
         /// <summary>
         /// </summary>
         public OnlineHubSection SelectedSection { get; private set; }
+
+        public bool HasUnreadSections { get; private set; }
+
+        public event EventHandler UnreadStateChanged;
 
         /// <summary>
         /// </summary>
@@ -233,7 +238,7 @@ namespace Quaver.Shared.Graphics.Overlays.Hub
         /// </summary>
         private void CreateHeaderText()
         {
-            HeaderText = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold), "ONLINE HUB", 20)
+            HeaderText = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold), "ONLINE HUB", 20)
             {
                 Parent = HeaderBackground,
                 Alignment = Alignment.MidLeft,
@@ -299,6 +304,16 @@ namespace Quaver.Shared.Graphics.Overlays.Hub
             }
 
             Sections[type].MarkAsUnread();
+        }
+
+        internal void OnSectionUnreadStateChanged()
+        {
+            var hasUnreadSections = Sections.Values.Any(section => section.IsUnread);
+            if (HasUnreadSections == hasUnreadSections)
+                return;
+
+            HasUnreadSections = hasUnreadSections;
+            UnreadStateChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }
