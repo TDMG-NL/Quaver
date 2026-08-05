@@ -173,6 +173,22 @@ namespace Quaver.Shared
         /// </summary>
         private Point _preResizeBackBufferSize;
 
+        /// <summary>
+        ///     Last requested window size, kept apart from <see cref="ConfigManager.WindowWidth"/>/
+        ///     <see cref="ConfigManager.WindowHeight"/> since <see cref="OnClientSizeChanged"/>
+        ///     overwrites those with whatever the OS actually produced (e.g. a Snap/tile clamp).
+        /// </summary>
+        private int? _requestedWindowWidth;
+
+        /// <inheritdoc cref="_requestedWindowWidth"/>
+        private int? _requestedWindowHeight;
+
+        /// <summary>
+        ///     Set while <see cref="ChangeResolution"/> applies an explicit request, so
+        ///     <see cref="OnClientSizeChanged"/> doesn't mistake its clamp echo for a new request.
+        /// </summary>
+        private bool _applyingExplicitResize;
+
         /// <inheritdoc />
         /// <summary>
         /// </summary>
@@ -605,8 +621,8 @@ namespace Quaver.Shared
         /// <returns>Whether a retry was just issued and the caller should wait for it to settle.</returns>
         private bool ReconcileWindowSize()
         {
-            var targetWidth = ConfigManager.WindowWidth.Value;
-            var targetHeight = ConfigManager.WindowHeight.Value;
+            var targetWidth = _requestedWindowWidth ?? ConfigManager.WindowWidth.Value;
+            var targetHeight = _requestedWindowHeight ?? ConfigManager.WindowHeight.Value;
 
             if (Window.ClientBounds.Width == targetWidth && Window.ClientBounds.Height == targetHeight)
             {
@@ -633,6 +649,9 @@ namespace Quaver.Shared
 
             var actualWidth = Window.ClientBounds.Width;
             var actualHeight = Window.ClientBounds.Height;
+
+            _requestedWindowWidth = actualWidth;
+            _requestedWindowHeight = actualHeight;
 
             if (Graphics.PreferredBackBufferWidth == actualWidth && Graphics.PreferredBackBufferHeight == actualHeight)
                 return false;
@@ -1347,6 +1366,12 @@ namespace Quaver.Shared
             var targetWidth = ConfigManager.WindowWidth.Value;
             var targetHeight = ConfigManager.WindowHeight.Value;
 
+            if (rebuildScreen)
+            {
+                _requestedWindowWidth = targetWidth;
+                _requestedWindowHeight = targetHeight;
+            }
+
             var oldPos = Window.Position;
             var oldWidth = preResizeBackBufferSize?.X ?? Graphics.PreferredBackBufferWidth;
             var oldHeight = preResizeBackBufferSize?.Y ?? Graphics.PreferredBackBufferHeight;
@@ -1366,7 +1391,9 @@ namespace Quaver.Shared
                     WindowManager.ChangeVirtualScreenSize(new Vector2(WindowManager.BaseResolution.X, WindowManager.BaseResolution.X / ratio));
             }
 
+            _applyingExplicitResize = rebuildScreen;
             Graphics.ApplyChanges();
+            _applyingExplicitResize = false;
 
             if (centerWindow)
                 MonitorHelper.CenterOnCurrentMonitor(Window, oldPos, oldWidth, oldHeight, targetWidth, targetHeight);
@@ -1432,6 +1459,12 @@ namespace Quaver.Shared
 
             ConfigManager.WindowWidth.Value = Window.ClientBounds.Width;
             ConfigManager.WindowHeight.Value = Window.ClientBounds.Height;
+
+            if (!_applyingExplicitResize)
+            {
+                _requestedWindowWidth = Window.ClientBounds.Width;
+                _requestedWindowHeight = Window.ClientBounds.Height;
+            }
 
             // Keep scaling live every event (avoids stretching mid-drag); defer only the screen rebuild.
             ChangeResolution(centerWindow: false, preResizeBackBufferSize: _preResizeBackBufferSize, rebuildScreen: false);
