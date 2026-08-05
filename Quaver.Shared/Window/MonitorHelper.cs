@@ -24,11 +24,8 @@ namespace Quaver.Shared.Window
         ///     Resolves "SDL2" to the same arch-subfolder DLL MonoGame initializes, not the uninitialized
         ///     copy .NET's default probing would otherwise find next to the executable.
         /// </summary>
-        static MonitorHelper()
-        {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                NativeLibrary.SetDllImportResolver(typeof(MonitorHelper).Assembly, ResolveSdl2);
-        }
+        static MonitorHelper() =>
+            NativeLibrary.SetDllImportResolver(typeof(MonitorHelper).Assembly, ResolveSdl2);
 
         private static IntPtr ResolveSdl2(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
         {
@@ -36,7 +33,12 @@ namespace Quaver.Shared.Window
                 return IntPtr.Zero;
 
             var archFolder = Environment.Is64BitProcess ? "x64" : "x86";
-            var path = Path.Combine(AppContext.BaseDirectory, archFolder, "SDL2.dll");
+
+            var path = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                ? Path.Combine(AppContext.BaseDirectory, "libSDL2-2.0.0.dylib")
+                : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+                    ? Path.Combine(AppContext.BaseDirectory, archFolder, "libSDL2-2.0.so.0")
+                    : Path.Combine(AppContext.BaseDirectory, archFolder, "SDL2.dll");
 
             return File.Exists(path) && NativeLibrary.TryLoad(path, out var handle) ? handle : IntPtr.Zero;
         }
