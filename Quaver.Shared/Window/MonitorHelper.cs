@@ -6,6 +6,8 @@
 */
 
 using System;
+using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.Xna.Framework;
 using Wobble.Window;
@@ -18,6 +20,27 @@ namespace Quaver.Shared.Window
     /// </summary>
     public static class MonitorHelper
     {
+        /// <summary>
+        ///     Resolves "SDL2" to the same arch-subfolder DLL MonoGame initializes, not the uninitialized
+        ///     copy .NET's default probing would otherwise find next to the executable.
+        /// </summary>
+        static MonitorHelper()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                NativeLibrary.SetDllImportResolver(typeof(MonitorHelper).Assembly, ResolveSdl2);
+        }
+
+        private static IntPtr ResolveSdl2(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
+        {
+            if (libraryName != "SDL2")
+                return IntPtr.Zero;
+
+            var archFolder = Environment.Is64BitProcess ? "x64" : "x86";
+            var path = Path.Combine(AppContext.BaseDirectory, archFolder, "SDL2.dll");
+
+            return File.Exists(path) && NativeLibrary.TryLoad(path, out var handle) ? handle : IntPtr.Zero;
+        }
+
         #region Win32 P/Invoke
 
         private const int MONITOR_DEFAULTTONEAREST = 2;
@@ -55,6 +78,14 @@ namespace Quaver.Shared.Window
 
         [DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
         private static extern int SDL_GetDisplayBounds(int displayIndex, out SDL_Rect rect);
+
+        private const uint SDL_WINDOW_MAXIMIZED = 0x00000080;
+
+        [DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
+        private static extern uint SDL_GetWindowFlags(IntPtr window);
+
+        [DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void SDL_RestoreWindow(IntPtr window);
 
         #endregion
 
@@ -125,6 +156,22 @@ namespace Quaver.Shared.Window
             }
 
             return null;
+        }
+
+        /// <summary>
+        ///     Restores <paramref name="window"/> if the OS has it maximized - a maximized window's size
+        ///     is pinned by the OS, so resize requests get silently clamped until it's cleared. Goes
+        ///     through SDL's own maximized state rather than a platform-specific API, so it works the
+        ///     same on Windows, macOS, and Linux.
+        /// </summary>
+        /// <returns>Whether the window was maximized and got restored.</returns>
+        public static bool RestoreIfMaximized(GameWindow window)
+        {
+            if ((SDL_GetWindowFlags(window.Handle) & SDL_WINDOW_MAXIMIZED) == 0)
+                return false;
+
+            SDL_RestoreWindow(window.Handle);
+            return true;
         }
 
         /// <summary>
