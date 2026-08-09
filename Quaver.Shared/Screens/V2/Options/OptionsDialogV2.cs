@@ -22,13 +22,14 @@ using Wobble.Graphics.Sprites.Text;
 using Wobble.Graphics.UI.Dialogs;
 using Wobble.Graphics.UI.Form;
 using Wobble.Input;
+using Wobble.Logging;
 using Wobble.Managers;
 using Wobble.Window;
 
 namespace Quaver.Shared.Screens.V2.Options
 {
     /// <summary>
-    ///     First-stage Options V2 modal shell. Option sections and controls are intentionally absent.
+    ///     Options V2 modal shell with category navigation. Option controls are intentionally absent.
     /// </summary>
     internal sealed class OptionsDialogV2 : DialogScreen, ISkinV2EditorHost
     {
@@ -96,6 +97,28 @@ namespace Quaver.Shared.Screens.V2.Options
 
         private RoundedButton RailToggle { get; set; }
 
+        private Texture2D OptionsIcons { get; set; }
+
+        private ScrollContainer CategoryNavigationScroll { get; set; }
+
+        private FlexContainer CategoryNavigationList { get; set; }
+
+        private ScrollContainer SubcategoryNavigationScroll { get; set; }
+
+        private FlexContainer SubcategoryNavigationList { get; set; }
+
+        private List<OptionsCategoryButton> CategoryButtons { get; } =
+            new List<OptionsCategoryButton>();
+
+        private List<OptionsSubcategoryButton> SubcategoryButtons { get; } =
+            new List<OptionsSubcategoryButton>();
+
+        private OptionsCategoryDefinition SelectedCategory { get; set; } =
+            OptionsNavigationCatalog.Categories[0];
+
+        private string SelectedSubcategoryKey { get; set; } =
+            OptionsNavigationCatalog.AllLocalizationKey;
+
         private FlexItemOptions HeaderTitleOptions { get; set; }
 
         private FlexItemOptions HeaderSearchOptions { get; set; }
@@ -126,6 +149,12 @@ namespace Quaver.Shared.Screens.V2.Options
 
         private float CurrentLeftRegionWidth { get; set; }
 
+        private float LastNavigationRailWidth { get; set; } = -1;
+
+        private float LastNavigationBodyHeight { get; set; } = -1;
+
+        private float LastNavigationCategoryWidth { get; set; } = -1;
+
         internal OptionsDialogV2() : base(0)
         {
             Skin = SkinManager.AcquireV2();
@@ -155,6 +184,7 @@ namespace Quaver.Shared.Screens.V2.Options
         public override void CreateContent()
         {
             var font = FontManager.GetWobbleFont(Config.Header.Font);
+            OptionsIcons = LoadOptionsIconAtlas();
 
             RootSurface = new RoundedPanel(Config.Backdrop.CornerRadius)
             {
@@ -164,6 +194,7 @@ namespace Quaver.Shared.Screens.V2.Options
 
             CreateBody();
             CreateRailOverlay();
+            CreateCategoryNavigation();
             // Create the header last so its transient dropdown content draws above the body and rail.
             CreateHeader(font);
             EditorTargets = new[]
@@ -197,11 +228,15 @@ namespace Quaver.Shared.Screens.V2.Options
                 RootSurface.IsHovered() && !RailOverlay.IsHovered())
                 SetRailExpanded(false, true);
 
-            if (RailExpanded && RailOverlay.Animations.Count == 0 &&
-                Math.Abs(RailOverlay.Width - CurrentLeftRegionWidth) < 0.5f)
+            if (RailExpanded && RailOverlay.Animations.Count == 0)
                 CategoryPanel.Visible = false;
 
+            UpdateNavigationLayout();
+            CategoryNavigationScroll.InputEnabled = RailOverlay.Visible && RailOverlay.IsHovered();
+            SubcategoryNavigationScroll.InputEnabled = CategoryPanel.Visible && CategoryPanel.IsHovered();
+
             base.Update(gameTime);
+            UpdateCategoryLabelProgress();
         }
 
         public override void Destroy()
@@ -236,6 +271,8 @@ namespace Quaver.Shared.Screens.V2.Options
             Tint = SkinV2Color.Parse(Config.Backdrop.Color);
             Alpha = Config.Backdrop.Opacity;
             RailExpanded = false;
+            CategoryButtons.Clear();
+            SubcategoryButtons.Clear();
 
             foreach (var child in PreviewRoot.Children.ToArray())
                 OptionsDrawableCleanup.DestroyTree(child);
@@ -287,7 +324,8 @@ namespace Quaver.Shared.Screens.V2.Options
             };
             Header.SetItemOptions(SearchPanel, HeaderSearchOptions);
 
-            SearchBox = new OptionsSearchTextbox(font, Config.Search)
+            SearchBox = new OptionsSearchTextbox(font, Config.Search,
+                OptionsIconAtlas.GetRegion(OptionsIcons, OptionsIconFrame.Search))
             {
                 Parent = SearchPanel,
                 Alignment = Alignment.MidLeft
@@ -376,10 +414,163 @@ namespace Quaver.Shared.Screens.V2.Options
                 PerformHoverFade = true,
                 Depth = -100
             };
-            RailToggle.SetIcon(FontAwesome.Get(FontAwesomeIcon.fa_chevron_pointing_to_the_left),
+            RailToggle.SetIcon(OptionsIconAtlas.GetRegion(OptionsIcons, OptionsIconFrame.Collapse),
                 new Vector2(Config.Rail.ToggleIconSize, Config.Rail.ToggleIconSize));
             RailToggle.Icon.Tint = SkinV2Color.Parse(Config.Rail.ToggleIconColor);
             UpdateRailIcon();
+        }
+
+        private void CreateCategoryNavigation()
+        {
+            var config = Config.Categories;
+            var font = FontManager.GetWobbleFont(config.Font);
+            var categoryContentHeight = GetListContentHeight(OptionsNavigationCatalog.Categories.Count);
+
+            CategoryNavigationScroll = CreateNavigationScroll(RailOverlay, categoryContentHeight);
+            CategoryNavigationList = CreateNavigationList(categoryContentHeight);
+            CategoryButtons.Clear();
+
+            foreach (var definition in OptionsNavigationCatalog.Categories)
+            {
+                var button = new OptionsCategoryButton(definition,
+                    OptionsIconAtlas.GetRegion(OptionsIcons, definition.Icon), font, config,
+                    (sender, args) => SelectCategory(definition))
+                {
+                    Parent = CategoryNavigationList
+                };
+                CategoryNavigationList.SetItemOptions(button,
+                    new FlexItemOptions { Basis = config.ButtonHeight, Shrink = 0 });
+                CategoryButtons.Add(button);
+            }
+
+            CategoryNavigationScroll.AddContainedDrawable(CategoryNavigationList);
+            ApplyCategorySelection();
+            CreateSubcategoryNavigation();
+        }
+
+        private void CreateSubcategoryNavigation()
+        {
+            OptionsDrawableCleanup.DestroyTree(SubcategoryNavigationScroll);
+            SubcategoryButtons.Clear();
+
+            var config = Config.Categories;
+            var font = FontManager.GetWobbleFont(config.Font);
+            var keys = new[] { OptionsNavigationCatalog.AllLocalizationKey }
+                .Concat(SelectedCategory.SubcategoryLocalizationKeys).ToArray();
+            var contentHeight = GetListContentHeight(keys.Length);
+            SubcategoryNavigationScroll = CreateNavigationScroll(CategoryPanel, contentHeight);
+            SubcategoryNavigationList = CreateNavigationList(contentHeight);
+
+            foreach (var key in keys)
+            {
+                var capturedKey = key;
+                var button = new OptionsSubcategoryButton(capturedKey, font, config,
+                    (sender, args) => SelectSubcategory(capturedKey))
+                {
+                    Parent = SubcategoryNavigationList
+                };
+                SubcategoryNavigationList.SetItemOptions(button,
+                    new FlexItemOptions { Basis = config.ButtonHeight, Shrink = 0 });
+                SubcategoryButtons.Add(button);
+            }
+
+            SubcategoryNavigationScroll.AddContainedDrawable(SubcategoryNavigationList);
+            ApplySubcategorySelection();
+            LastNavigationCategoryWidth = -1;
+            UpdateNavigationLayout(true);
+        }
+
+        private ScrollContainer CreateNavigationScroll(Drawable parent, float contentHeight)
+        {
+            var config = Config.Categories;
+            return new ScrollContainer(new ScalableVector2(1, 1),
+                new ScalableVector2(1, Math.Max(1, contentHeight)))
+            {
+                Parent = parent,
+                Position = new ScalableVector2(config.PanelInset, config.PanelInset),
+                Tint = Color.Transparent,
+                InputEnabled = true,
+                AllowScrollbarDragging = true,
+                ScrollSpeed = 80,
+                Scrollbar =
+                {
+                    Width = config.ScrollbarWidth,
+                    Tint = SkinV2Color.Parse(config.ScrollbarColor)
+                }
+            };
+        }
+
+        private FlexContainer CreateNavigationList(float contentHeight)
+        {
+            var list = new FlexContainer
+            {
+                Size = new ScalableVector2(1, Math.Max(1, contentHeight)),
+                Direction = FlexDirection.Column,
+                AlignItems = FlexAlignItems.Stretch,
+                RowGap = Config.Categories.RowSpacing
+            };
+            return list;
+        }
+
+        private float GetListContentHeight(int itemCount)
+        {
+            if (itemCount <= 0)
+                return 1;
+
+            return itemCount * Config.Categories.ButtonHeight +
+                   Math.Max(0, itemCount - 1) * Config.Categories.RowSpacing;
+        }
+
+        private Texture2D LoadOptionsIconAtlas()
+        {
+            var fallback = UserInterface.OptionsV2Icons;
+            if (!OptionsIconAtlas.IsValid(fallback))
+            {
+                throw new InvalidOperationException(
+                    $"The bundled Options V2 icon atlas must be at least " +
+                    $"{OptionsIconAtlas.MinimumWidth}x{OptionsIconAtlas.MinimumHeight} pixels.");
+            }
+
+            var texture = Skin.LoadTexture(Config.Categories.IconAtlas, fallback);
+            if (OptionsIconAtlas.IsValid(texture))
+                return texture;
+
+            Logger.Warning($"The configured Options V2 icon atlas must be at least " +
+                           $"{OptionsIconAtlas.MinimumWidth}x{OptionsIconAtlas.MinimumHeight} pixels; " +
+                           "the bundled atlas will be used instead.", LogType.Runtime, false);
+            return fallback;
+        }
+
+        private void SelectCategory(OptionsCategoryDefinition category)
+        {
+            SelectedCategory = category;
+            SelectedSubcategoryKey = OptionsNavigationCatalog.AllLocalizationKey;
+            ApplyCategorySelection();
+            CreateSubcategoryNavigation();
+
+            if (RailExpanded)
+                SetRailExpanded(false, true);
+        }
+
+        private void SelectSubcategory(string localizationKey)
+        {
+            SelectedSubcategoryKey = localizationKey;
+            ApplySubcategorySelection();
+        }
+
+        private void ApplyCategorySelection()
+        {
+            foreach (var button in CategoryButtons)
+                button.SetSelected(button.Definition.Id == SelectedCategory.Id);
+        }
+
+        private void ApplySubcategorySelection()
+        {
+            foreach (var button in SubcategoryButtons)
+            {
+                button.SetSelected(string.Equals(button.LocalizationKey, SelectedSubcategoryKey,
+                    StringComparison.Ordinal));
+            }
         }
 
         private MarqueeSpriteText CreateLabel(Sprite parent, WobbleFontStore font, string text, string color)
@@ -465,7 +656,70 @@ namespace Quaver.Shared.Screens.V2.Options
                 Math.Max(1, Body.Height - Config.Rail.ToggleInset * 2));
             RailToggle.Size = new ScalableVector2(toggleSize, toggleSize);
             PresetDropdown.CloseMenu();
+            LastNavigationRailWidth = -1;
+            LastNavigationBodyHeight = -1;
+            LastNavigationCategoryWidth = -1;
+            UpdateNavigationLayout(true);
+            UpdateCategoryLabelProgress();
             UpdateEditorLayout();
+        }
+
+        private void UpdateNavigationLayout(bool force = false)
+        {
+            if (CategoryNavigationScroll == null || SubcategoryNavigationScroll == null ||
+                RailOverlay == null || CategoryPanel == null || Body == null)
+                return;
+
+            if (!force && Math.Abs(LastNavigationRailWidth - RailOverlay.Width) < 0.001f &&
+                Math.Abs(LastNavigationBodyHeight - Body.Height) < 0.001f &&
+                Math.Abs(LastNavigationCategoryWidth - CategoryPanel.Width) < 0.001f)
+                return;
+
+            LastNavigationRailWidth = RailOverlay.Width;
+            LastNavigationBodyHeight = Body.Height;
+            LastNavigationCategoryWidth = CategoryPanel.Width;
+
+            var config = Config.Categories;
+            var inset = config.PanelInset;
+            var railWidth = Math.Max(1, RailOverlay.Width - inset * 2);
+            var toggleTop = Math.Max(inset,
+                Body.Height - Config.Rail.ToggleInset - RailToggle.Height);
+            var railHeight = Math.Max(1, toggleTop - inset * 2);
+            LayoutNavigationScroll(CategoryNavigationScroll, CategoryNavigationList,
+                railWidth, railHeight, GetListContentHeight(CategoryButtons.Count));
+
+            var categoryWidth = Math.Max(1, CategoryPanel.Width - inset * 2);
+            var categoryHeight = Math.Max(1, CategoryPanel.Height - inset * 2);
+            LayoutNavigationScroll(SubcategoryNavigationScroll, SubcategoryNavigationList,
+                categoryWidth, categoryHeight, GetListContentHeight(SubcategoryButtons.Count));
+        }
+
+        private void LayoutNavigationScroll(ScrollContainer scroll, FlexContainer list,
+            float viewportWidth, float viewportHeight, float contentHeight)
+        {
+            scroll.Position = new ScalableVector2(Config.Categories.PanelInset,
+                Config.Categories.PanelInset);
+            scroll.Size = new ScalableVector2(viewportWidth, viewportHeight);
+            scroll.ContentContainer.Size = new ScalableVector2(viewportWidth,
+                Math.Max(viewportHeight, contentHeight));
+            list.Size = new ScalableVector2(viewportWidth, Math.Max(1, contentHeight));
+            list.RefreshLayout();
+        }
+
+        private void UpdateCategoryLabelProgress()
+        {
+            if (RailOverlay == null || CategoryButtons.Count == 0)
+                return;
+
+            var collapsedWidth = RailSpacerOptions?.Basis ?? Config.Layout.CollapsedRailWidth;
+            var widthRange = Math.Max(0.001f, CurrentLeftRegionWidth - collapsedWidth);
+            var progress = MathHelper.Clamp((RailOverlay.Width - collapsedWidth) / widthRange, 0, 1);
+            var revealProgress = Math.Max(0.001f, Config.Categories.LabelRevealProgress);
+            var labelProgress = MathHelper.SmoothStep(0, 1,
+                MathHelper.Clamp(progress / revealProgress, 0, 1));
+
+            foreach (var button in CategoryButtons)
+                button.SetLabelExpansionProgress(labelProgress);
         }
 
         private void UpdateEditorLayout()
@@ -544,17 +798,19 @@ namespace Quaver.Shared.Screens.V2.Options
                 RailOverlay.Width = targetWidth;
                 CategoryPanel.Visible = !expanded;
             }
+            UpdateCategoryLabelProgress();
             UpdateRailIcon();
         }
 
         private void UpdateRailIcon()
         {
-            if (RailToggle?.Icon == null)
+            if (RailToggle == null || OptionsIcons == null)
                 return;
 
-            RailToggle.Icon.SpriteEffect = RailExpanded
-                ? SpriteEffects.None
-                : SpriteEffects.FlipHorizontally;
+            RailToggle.SetIcon(OptionsIconAtlas.GetRegion(OptionsIcons,
+                    RailExpanded ? OptionsIconFrame.Collapse : OptionsIconFrame.Expand),
+                new Vector2(Config.Rail.ToggleIconSize, Config.Rail.ToggleIconSize));
+            RailToggle.Icon.Tint = SkinV2Color.Parse(Config.Rail.ToggleIconColor);
         }
 
         private GlobalInputHandleResult HandleGlobalInputAction(GlobalKeybindActions action,
@@ -744,7 +1000,8 @@ namespace Quaver.Shared.Screens.V2.Options
 
         private Sprite SearchIcon { get; }
 
-        internal OptionsSearchTextbox(WobbleFontStore font, SkinV2OptionsSearchConfig config)
+        internal OptionsSearchTextbox(WobbleFontStore font, SkinV2OptionsSearchConfig config,
+            TextureRegion searchIcon)
             : base(new ScalableVector2(1, 1), font, config.FontSize, "",
                 LocalizationManager.Get("Screen_Options_Searchforoptions"))
         {
@@ -764,7 +1021,7 @@ namespace Quaver.Shared.Screens.V2.Options
                 Parent = this,
                 Alignment = Alignment.MidLeft,
                 X = config.HorizontalPadding,
-                Image = FontAwesome.Get(FontAwesomeIcon.fa_magnifying_glass),
+                Region = searchIcon,
                 Size = new ScalableVector2(config.IconSize, config.IconSize),
                 Tint = SkinV2Color.Parse(config.IconColor),
                 UsePreviousSpriteBatchOptions = true

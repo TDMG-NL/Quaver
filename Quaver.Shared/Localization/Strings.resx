@@ -504,6 +504,9 @@
   <data name="Screen_Options_FrameTime" xml:space="preserve">
     <value>Frame Time</value>
   </data>
+  <data name="Screen_Options_FrameRate" xml:space="preserve">
+    <value>Frame Rate</value>
+  </data>
   <data name="Screen_Options_Output" xml:space="preserve">
     <value>Output</value>
   </data>

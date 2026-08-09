@@ -25,6 +25,10 @@ namespace Quaver.Shared.Screens.V2.Options
         public SkinV2OptionsRailConfig Rail { get; set; } = new SkinV2OptionsRailConfig();
 
         [Required]
+        public SkinV2OptionsCategoryNavigationConfig Categories { get; set; } =
+            new SkinV2OptionsCategoryNavigationConfig();
+
+        [Required]
         public SkinV2OptionsSearchConfig Search { get; set; } = new SkinV2OptionsSearchConfig();
 
         [Required]
@@ -164,6 +168,81 @@ namespace Quaver.Shared.Screens.V2.Options
         public float ToggleCornerRadius { get; set; } = SkinV2BorderRadiusConfig.Normal;
     }
 
+    public sealed class SkinV2OptionsCategoryNavigationConfig
+    {
+        [SkinAssetPath]
+        public string IconAtlas { get; set; } = "";
+
+        [SkinFont]
+        public string Font { get; set; } = SkinV2FontWeightsConfig.SemiBold;
+
+        [Range(1, 256)]
+        public int FontSize { get; set; } = SkinV2FontSizesConfig.TextLg;
+
+        [Range(1, 8192)]
+        public float ButtonHeight { get; set; } = 40;
+
+        [Range(1, 8192)]
+        public float IconSize { get; set; } = 30;
+
+        [Range(0, 2048)]
+        public float PanelInset { get; set; } = SkinV2Spacing.Spacing2Xs;
+
+        [Range(0, 2048)]
+        public float RowSpacing { get; set; } = SkinV2Spacing.Spacing2Xs;
+
+        [Range(0, 2048)]
+        public float LabelSpacing { get; set; } = SkinV2Spacing.Spacing2Xs;
+
+        [Range(0, 2048)]
+        public float HorizontalPadding { get; set; } = SkinV2Spacing.Spacing2Xs;
+
+        [Range(0, 4096)]
+        public float CornerRadius { get; set; } = SkinV2BorderRadiusConfig.Normal;
+
+        [Range(0, 128)]
+        public float ScrollbarWidth { get; set; } = 3;
+
+        [Range(0.01d, 1d)]
+        public float LabelRevealProgress { get; set; } = 1;
+
+        [ConfigEditable]
+        [SkinColor]
+        public string ForegroundColor { get; set; } = "#FFFFFFFF";
+
+        [ConfigEditable]
+        [SkinColor]
+        public string SelectedForegroundColor { get; set; } = "#FFFFFFFF";
+
+        [ConfigEditable]
+        [SkinColor]
+        public string RailButtonColor { get; set; } = "#00000000";
+
+        [ConfigEditable]
+        [SkinColor]
+        public string RailButtonHoverColor { get; set; } = "#737373FF";
+
+        [ConfigEditable]
+        [SkinColor]
+        public string RailButtonSelectedColor { get; set; } = "#A7A7A7FF";
+
+        [ConfigEditable]
+        [SkinColor]
+        public string SubcategoryButtonColor { get; set; } = "#555555FF";
+
+        [ConfigEditable]
+        [SkinColor]
+        public string SubcategoryButtonHoverColor { get; set; } = "#737373FF";
+
+        [ConfigEditable]
+        [SkinColor]
+        public string SubcategoryButtonSelectedColor { get; set; } = "#A7A7A7FF";
+
+        [ConfigEditable]
+        [SkinColor]
+        public string ScrollbarColor { get; set; } = "#A7A7A7FF";
+    }
+
     public sealed class SkinV2OptionsSearchConfig
     {
         [ConfigEditable]
@@ -191,13 +270,13 @@ namespace Quaver.Shared.Screens.V2.Options
         public int FontSize { get; set; } = SkinV2FontSizesConfig.TextLg;
 
         [Range(1, 8192)]
-        public float IconSize { get; set; } = SkinV2Spacing.SpacingBase;
+        public float IconSize { get; set; } = SkinV2Spacing.Spacing3Xl;
 
         [Range(0, 2048)]
         public float HorizontalPadding { get; set; } = SkinV2Spacing.Spacing2Xs;
 
         [Range(0, 2048)]
-        public float TextLeftInset { get; set; } = 34;
+        public float TextLeftInset { get; set; } = 44;
 
         [Range(0, 2048)]
         public float ResultRightInset { get; set; } = SkinV2Spacing.Spacing2Xs;
