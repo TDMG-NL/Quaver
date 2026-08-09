@@ -1205,6 +1205,21 @@ Marvelous instead.</value>
   <data name="Screen_Options_SearchResults" xml:space="preserve">
     <value>{0} Search Results</value>
   </data>
+  <data name="Screen_Options_AdjustGameSettings" xml:space="preserve">
+    <value>Adjust Game Settings</value>
+  </data>
+  <data name="Screen_Options_OptionsFound" xml:space="preserve">
+    <value>{0} Options Found</value>
+  </data>
+  <data name="Screen_Options_PresetPerformance" xml:space="preserve">
+    <value>Performance</value>
+  </data>
+  <data name="Screen_Options_PresetGraphics" xml:space="preserve">
+    <value>Graphics</value>
+  </data>
+  <data name="Screen_Options_PresetSaveFailed" xml:space="preserve">
+    <value>The selected preset could not be saved: {0}</value>
+  </data>
   <data name="Screen_Download_Musiciscurrentlypaused" xml:space="preserve">
     <value>Music is currently paused!</value>
   </data>
