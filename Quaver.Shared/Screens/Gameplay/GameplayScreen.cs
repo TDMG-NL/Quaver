@@ -693,7 +693,8 @@ namespace Quaver.Shared.Screens.Gameplay
                         return GlobalInputHandleResult.Consumed;
                     break;
                 case GlobalKeybindActions.GameplayQuickExit:
-                    if (!IsPlayComplete && !IsCalibratingOffset || IsMultiplayerGame || IsSongSelectPreview)
+                    if (!OnlineChat.Instance.IsOpen &&
+                        (!IsPlayComplete && !IsCalibratingOffset || IsMultiplayerGame || IsSongSelectPreview))
                     {
                         HandleQuickExit();
                         return GlobalInputHandleResult.Consumed;
