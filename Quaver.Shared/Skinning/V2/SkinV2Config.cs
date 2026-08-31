@@ -9,6 +9,7 @@ using Quaver.Shared.Screens.V2.Multi;
 using Quaver.Shared.Screens.V2.Multiplayer;
 using Quaver.Shared.Screens.V2.MultiplayerLobby;
 using Quaver.Shared.Screens.V2.Music;
+using Quaver.Shared.Screens.V2.Options;
 using Quaver.Shared.Screens.V2.Results;
 using Quaver.Shared.Screens.V2.Selection;
 using Quaver.Shared.Screens.V2.Theater;
@@ -147,6 +148,8 @@ namespace Quaver.Shared.Skinning.V2
 
         [Required]
         public SkinV2MusicPlayerConfig Music { get; set; } = new SkinV2MusicPlayerConfig();
+
+        public SkinV2OptionsConfig Options { get; set; } = new SkinV2OptionsConfig();
 
         [Required]
         public SkinV2TheaterConfig Theater { get; set; } = new SkinV2TheaterConfig();
