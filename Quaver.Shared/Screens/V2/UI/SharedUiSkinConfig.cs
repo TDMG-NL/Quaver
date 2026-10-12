@@ -20,9 +20,6 @@ namespace Quaver.Shared.Screens.V2.UI
         public float MenuGap { get; set; } = 0;
 
         [Range(0, 2048)]
-        public float MenuPadding { get; set; } = SkinV2MarginsConfig.Sm;
-
-        [Range(0, 2048)]
         public float ItemSpacing { get; set; } = 0;
 
         [Range(1, 8192)]
@@ -35,7 +32,10 @@ namespace Quaver.Shared.Screens.V2.UI
         public float IconSize { get; set; } = 17;
 
         [Range(1, 8192)]
-        public float ChevronSize { get; set; } = 18;
+        public float ChevronWidth { get; set; } = 16;
+
+        [Range(1, 8192)]
+        public float ChevronHeight { get; set; } = 10;
 
         [Range(0, 2048)]
         public float DividerInset { get; set; } = 0;
@@ -92,7 +92,11 @@ namespace Quaver.Shared.Screens.V2.UI
 
         [ConfigEditable]
         [SkinColor]
-        public string ScrollbarColor { get; set; } = "#FFFFFF80";
+        public string ScrollbarColor { get; set; } = "#D9E3F4FF";
+
+        [ConfigEditable]
+        [SkinColor]
+        public string ScrollbarTrackColor { get; set; } = "#181E25FF";
     }
 
     /// <summary>
