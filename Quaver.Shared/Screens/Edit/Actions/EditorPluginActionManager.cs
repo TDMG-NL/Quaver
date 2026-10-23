@@ -209,6 +209,14 @@ namespace Quaver.Shared.Screens.Edit.Actions
 
         /// <summary>
         /// </summary>
+        public void StartPlayback() => ActionManager.StartPlayback(true);
+
+        /// <summary>
+        /// </summary>
+        public void StopPlayback() => ActionManager.StopPlayback(true);
+
+        /// <summary>
+        /// </summary>
         /// <param name="input"></param>
         public void GoToObjects(string input) => ActionManager.GoToObjects(input, true);
 
@@ -297,6 +305,8 @@ namespace Quaver.Shared.Screens.Edit.Actions
         public void RemoveBookmarkBatch(List<BookmarkInfo> bookmarks) => ActionManager.RemoveBookmarkBatch(bookmarks, true);
 
         public void EditBookmark(BookmarkInfo bookmark, string note) => ActionManager.EditBookmark(bookmark, note, true);
+
+        public void ChangeBookmarkColorBatch(List<BookmarkInfo> bookmarks, int r, int g, int b) => ActionManager.ChangeBookmarkColorBatch(bookmarks, new Color(r, g, b), true);
 
         public void ChangeBookmarkBatchOffset(List<BookmarkInfo> bookmarks, int offset) =>
             ActionManager.ChangeBookmarkBatchOffset(bookmarks, offset, true);

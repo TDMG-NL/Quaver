@@ -786,6 +786,16 @@ namespace Quaver.Shared.Screens.Edit.Actions
                 Perform(new EditorActionChangeTimingGroupColor(this, WorkingMap, timingGroup, color), fromLua);
         }
 
+        public void StartPlayback(bool fromLua = false)
+        {
+            EditScreen.Track.Play();
+        }
+
+        public void StopPlayback(bool fromLua = false)
+        {
+            EditScreen.Track.Stop();
+        }
+
         /// <summary>
         /// </summary>
         /// <param name="input"></param>
@@ -869,6 +879,23 @@ namespace Quaver.Shared.Screens.Edit.Actions
         /// <param name="bookmark"></param>
         /// <param name="note"></param>
         public void EditBookmark(BookmarkInfo bookmark, string note, bool fromLua = false) => Perform(new EditorActionEditBookmark(this, WorkingMap, bookmark, note), fromLua);
+
+        /// <summary>
+        ///     Changes the color of a batch of bookmarks.
+        /// </summary>
+        /// <param name="bookmarks"></param>
+        /// <param name="color"></param>
+        public void ChangeBookmarkColorBatch(List<BookmarkInfo> bookmarks, Color color, bool fromLua = false)
+        {
+            var colorRgb = $"{color.R},{color.G},{color.B}";
+            var actions = bookmarks.Distinct()
+                .Select(bookmark => (IEditorAction)new EditorActionEditBookmark(this, WorkingMap, bookmark,
+                    bookmark.Note, colorRgb))
+                .ToList();
+
+            if (actions.Count != 0)
+                Perform(new EditorActionBatch(this, actions), fromLua);
+        }
 
         /// <summary>
         ///     Adjusts the offset of a batch of bookmarks

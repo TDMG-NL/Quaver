@@ -90,6 +90,12 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         /// </summary>
         private float UsernameY { get; } = 6;
 
+        private const int UsernameToClockSpacing = 4;
+
+        private const int ClockToTimeSpacing = 2;
+
+        private const int RightContentSpacing = 10;
+
         /// <summary>
         ///     A sprite displayed when the score can't be beaten with the activated mods
         /// </summary>
@@ -105,11 +111,6 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         ///     The x position of <see cref="PerformanceRating"/>
         /// </summary>
         private int PerformanceRatingX { get; } = -12;
-
-        /// <summary>
-        ///     The original score username
-        /// </summary>
-        private string ScoreUsername { get; set; }
 
         /// <summary>
         ///     Returns the background color of the table
@@ -159,10 +160,6 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         private bool CantBeatAlertShouldBeVisible { get; set; }
 
         private bool RequiredAccuracyAlertShouldBeVisible { get; set; }
-
-        internal bool IsStaticVisualStable => Animations.Count == 0 && !HasAnimatedDescendant(this);
-
-        internal bool IsHighlightHovered => Button.IsHovered || CantBeatAlert.IsHovered || RequiredAccuracyAlert.IsHovered;
 
         /// <summary>
         /// </summary>
@@ -215,10 +212,10 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         public void UpdateContent(DrawableLeaderboardScore score)
         {
             Score = score;
+            Button.IsClickable = IsScrollVisible && !Score.Item.IsEmptyScore;
 
             AddScheduledUpdate(() =>
             {
-                InvalidateRowsCache();
                 Tint = BackgroundColor;
 
                 // Empty scores don't need to update its state
@@ -253,6 +250,9 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
                 UpdateAvatar();
                 UpdateCantBeatAlert();
                 UpdateRequiredAccuracyAlert();
+                UpdateRequiredAccuracyTooltip();
+                UpdateUsernameWidth();
+                UpdateTimePosition();
                 UpdateFlag();
             });
         }
@@ -272,38 +272,6 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
 
             base.Destroy();
         }
-
-        internal void DrawBackground() => DrawToSpriteBatch();
-
-        internal void DrawStaticContent(GameTime gameTime)
-        {
-            if (!Visible || Score.Item.IsEmptyScore)
-                return;
-
-            DrawBackground();
-
-            foreach (var child in Children)
-            {
-                if (child == Button)
-                    continue;
-
-                child.Draw(gameTime);
-            }
-        }
-
-        private static bool HasAnimatedDescendant(Drawable drawable)
-        {
-            foreach (var child in drawable.Children)
-            {
-                if (child.Animations.Count != 0 || HasAnimatedDescendant(child))
-                    return true;
-            }
-
-            return false;
-        }
-
-        private void InvalidateRowsCache() =>
-            (Score.Container as LeaderboardScoresContainer)?.InvalidateRowsCache();
 
         /// <summary>
         ///     Creates <see cref="Button"/>
@@ -329,7 +297,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
                 if (OnlineManager.CurrentGame != null)
                     return;
 
-                game?.CurrentScreen?.Exit(() => new ResultsScreen(MapManager.Selected.Value, Score.Item));
+                game?.CurrentScreen?.Exit(() => QuaverScreenFactory.CreateResults(MapManager.Selected.Value, Score.Item));
             };
 
             Button.RightClicked += (sender, args) =>
@@ -347,7 +315,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         /// </summary>
         private void CreateRankText()
         {
-            Rank = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold), "10.", 18)
+            Rank = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold), "10.", 18)
             {
                 Parent = this,
                 Alignment = Alignment.MidLeft,
@@ -405,7 +373,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
                 Position = new ScalableVector2(Avatar.X + Avatar.Width + PaddingLeft / 2f, UsernameY + 4),
                 UsePreviousSpriteBatchOptions = true,
                 Size = new ScalableVector2(24, 24),
-                Image = Flags.Get("XX")
+                Region = Flags.GetRegion("XX")
             };
 
             if (ConfigManager.LeaderboardSection.Value == LeaderboardType.Clan)
@@ -417,7 +385,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         /// </summary>
         private void CreateUsername()
         {
-            Username = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold), "Player", 17)
+            Username = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold), "Player", 19)
             {
                 Parent = this,
                 Alignment = Alignment.TopLeft,
@@ -432,7 +400,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         /// </summary>
         private void CreateClan()
         {
-            Clan = new ClanTag(17)
+            Clan = new ClanTag(19)
             {
                 Parent = this,
                 Alignment = Alignment.TopLeft,
@@ -448,17 +416,26 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
 
             Clan.X = Flag.X + Flag.Width + PaddingLeft / 4f;
             Username.X = Clan.HasClan ? Clan.X + Clan.Width + 3 : Clan.X;
-            var changed = ScoreUsername != score.Name;
-            if (changed)
-            {
-                ScoreUsername = score.Name;
-                Username.Text = score.Name;
-                var maxWidth = (int)(Width + PerformanceRating.X - PerformanceRating.Width - Clan.X - Clan.Width - Time.Width - CantBeatAlert.Width - 70);
-                if (Username.Width > maxWidth)
-                {
-                    Username.TruncateWithEllipsis(maxWidth);
-                }
-            }
+            Username.Text = score.Name;
+        }
+
+        private void UpdateUsernameWidth()
+        {
+            // Restore the full name before recalculating so it can grow again when an alert disappears.
+            Username.Text = Score.Item.Name;
+
+            var rightContentX = Width + PerformanceRating.X - PerformanceRating.Width;
+
+            if (CantBeatAlertShouldBeVisible && CantBeatAlert.Width > 0)
+                rightContentX = Width + CantBeatAlert.X - CantBeatAlert.Width;
+            else if (RequiredAccuracyAlertShouldBeVisible && RequiredAccuracyAlert.Width > 0)
+                rightContentX = Width + RequiredAccuracyAlert.X - RequiredAccuracyAlert.Width;
+
+            var timestampWidth = Clock.Width + ClockToTimeSpacing + Time.Width;
+            var maxWidth = (int)(rightContentX - Username.X - UsernameToClockSpacing - timestampWidth - RightContentSpacing);
+
+            if (Username.Width > maxWidth)
+                Username.TruncateWithEllipsis(maxWidth);
         }
 
         /// <summary>
@@ -466,11 +443,11 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         /// </summary>
         private void CreatePerformanceRating()
         {
-            PerformanceRating = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold), "00.00", 22)
+            PerformanceRating = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold), "00.00", 22)
             {
                 Parent = this,
                 Alignment = Alignment.TopRight,
-                Y = 8,
+                Y = 5,
                 X = PerformanceRatingX,
                 Tint = SkinManager.Skin?.SongSelect?.LeaderboardScoreRatingColor ?? ColorHelper.HexToColor("#E9B736"),
                 UsePreviousSpriteBatchOptions = true
@@ -482,7 +459,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         /// </summary>
         private void CreateAccuracyMaxCombo()
         {
-            AccuracyMaxCombo = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold), "00.00% | 0,000x", 18)
+            AccuracyMaxCombo = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold), "00.00% | 0,000x", 18)
             {
                 Parent = this,
                 Alignment = Alignment.BotRight,
@@ -498,7 +475,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         /// </summary>
         private void CreateMods()
         {
-            Mods = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold), "", 16)
+            Mods = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold), "", 16)
             {
                 Parent = this,
                 Alignment = Alignment.BotLeft,
@@ -534,7 +511,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
                     BorderColor = Color.Crimson,
                     BorderThickness = 2,
                     TextSize = 20,
-                    TextWeight = FontWeight.Bold
+                    TextWeight = FontWeight.SemiBold
                 }
             });
 
@@ -567,7 +544,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
                     BorderColor = ColorHelper.HexToColor("#5dc7f9"),
                     BorderThickness = 2,
                     TextSize = 20,
-                    TextWeight = FontWeight.Bold
+                    TextWeight = FontWeight.SemiBold
                 }
             };
 
@@ -592,11 +569,11 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
                 Size = new ScalableVector2(12, 12),
             };
 
-            Time = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold), "", 14)
+            Time = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold), "", 14)
             {
                 Parent = Clock,
                 Alignment = Alignment.MidLeft,
-                X = Clock.Width + 2,
+                X = Clock.Width + ClockToTimeSpacing,
                 UsePreviousSpriteBatchOptions = true
             };
         }
@@ -612,12 +589,9 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
             var date = DateTime.Parse(Score.Item.DateTime);
             var timeDifference = DateTime.Now - date;
 
-            Clock.Y = Username.Y + Username.Height / 2f - Clock.Height / 2f;
-            Clock.X = Username.X + Username.Width + 4;
-
             Time.Parent = Clock;
             Time.Alignment = Alignment.MidLeft;
-            Time.X = Clock.Width + 2;
+            Time.X = Clock.Width + ClockToTimeSpacing;
 
             // Years
             if ((int) timeDifference.TotalDays > 365)
@@ -651,6 +625,14 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
 
             Time.Tint = timeDifference.TotalMilliseconds < 86400000 ? ColorHelper.HexToColor("#6EF7F7") : ColorHelper.HexToColor("#808080");
             Clock.Tint = Time.Tint;
+
+            UpdateTimePosition();
+        }
+
+        private void UpdateTimePosition()
+        {
+            Clock.Y = Username.Y + Username.Height / 2f - Clock.Height / 2f;
+            Clock.X = Username.X + Username.Width + UsernameToClockSpacing;
         }
 
         /// <summary>
@@ -662,13 +644,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
             if (Button == null)
                 return;
 
-            if (Score.Container is LeaderboardScoresContainer { IsRowsCacheActive: true })
-            {
-                Tint = BackgroundColor;
-                return;
-            }
-
-            var color = IsHighlightHovered ? ColorHelper.HexToColor("#575757"): BackgroundColor;
+            var color = Button.IsHovered || CantBeatAlert.IsHovered ? ColorHelper.HexToColor("#575757"): BackgroundColor;
             FadeToColor(color, gameTime.ElapsedGameTime.TotalMilliseconds, 30);
         }
 
@@ -773,7 +749,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
             }
             else
             {
-                CantBeatAlert.X = PerformanceRating.X - PerformanceRating.Width - 5;
+                CantBeatAlert.X = PerformanceRating.X - PerformanceRating.Width - 10;
                 CantBeatAlertShouldBeVisible = true;
                 ApplyAlertVisibility();
             }
@@ -793,7 +769,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
             }
 
             RequiredAccuracyAlertShouldBeVisible = true;
-            RequiredAccuracyAlert.X = PerformanceRating.X - PerformanceRating.Width - 5;
+            RequiredAccuracyAlert.X = PerformanceRating.X - PerformanceRating.Width - 10;
             ApplyAlertVisibility();
         }
 
@@ -805,17 +781,17 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
             // Get user's current country
             if (!Score.Item.IsOnline)
             {
-                Flag.Image = Flags.Get("XX");
+                Flag.Region = Flags.GetRegion("XX");
                 return;
             }
 
             try
             {
-                Flag.Image = Flags.Get(Score.Item.Country);
+                Flag.Region = Flags.GetRegion(Score.Item.Country);
             }
             catch (Exception)
             {
-                Flag.Image = Flags.Get("XX");
+                Flag.Region = Flags.GetRegion("XX");
             }
         }
 
@@ -828,8 +804,6 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         {
             if (e.SteamId != (ulong) Score.Item.SteamId)
                 return;
-
-            InvalidateRowsCache();
 
             lock (Avatar)
             lock (Avatar.Image)
@@ -847,8 +821,17 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         /// <param name="e"></param>
         private void OnModsChanged(object sender, ModsChangedEventArgs e)
         {
-            UpdateRequiredAccuracyTooltip();
-            InvalidateRowsCache();
+            AddScheduledUpdate(() =>
+            {
+                if (Score.Item.IsEmptyScore)
+                    return;
+
+                UpdateCantBeatAlert();
+                UpdateRequiredAccuracyAlert();
+                UpdateUsernameWidth();
+                UpdateTimePosition();
+                UpdateRequiredAccuracyTooltip();
+            });
         }
 
         /// <summary>
@@ -856,11 +839,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
         /// <param name="sender"></param>
         /// <param name="e"></param>
         private void OnAccuracyDisplayChanged(object sender, BindableValueChangedEventArgs<bool> e) =>
-            AddScheduledUpdate(() =>
-            {
-                UpdateAccuracyMode(Score);
-                InvalidateRowsCache();
-            });
+            AddScheduledUpdate(() => UpdateAccuracyMode(Score));
 
         /// <summary>
         /// Called when <see cref="AccuracyMaxCombo"/> and <see cref="Grade"> might need to be updated
@@ -962,6 +941,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Leaderboard.Components
 
             IsScrollVisible = visible;
             Visible = visible;
+            Button.IsClickable = visible && !Score.Item.IsEmptyScore;
 
             if (Score.Item.IsEmptyScore)
                 return;

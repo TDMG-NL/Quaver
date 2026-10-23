@@ -296,7 +296,7 @@ namespace Quaver.Shared.Database.Maps
                 return;
             }
 
-            BrowserHelper.OpenURL($"https://quavergame.com/mapsets/map/{map.MapId}");
+            BrowserHelper.OpenURL($"https://quavergame.com/mapsets/{map.MapSetId}/maps/{map.MapId}");
         }
 
         /// <summary>
@@ -433,6 +433,7 @@ namespace Quaver.Shared.Database.Maps
                             }
 
                             Mapsets.Remove(mapset);
+                            mapset.Maps.ForEach(PlaylistManager.RemoveMapFromAllPlaylists);
                             MapsetDeleted?.Invoke(typeof(MapManager), new MapsetDeletedEventArgs(mapset, index));
 
                             lock (BackgroundHelper.MapsetBanners)
@@ -468,6 +469,7 @@ namespace Quaver.Shared.Database.Maps
             }
 
             Mapsets.Remove(mapset);
+            mapset.Maps.ForEach(PlaylistManager.RemoveMapFromAllPlaylists);
 
             // Raise an event letting subscribers know a mapset has been deleted
             MapsetDeleted?.Invoke(typeof(MapManager), new MapsetDeletedEventArgs(mapset, index));
@@ -530,7 +532,9 @@ namespace Quaver.Shared.Database.Maps
                 Logger.Important($"Downloading latest version of map: {outdated.Id}", LogType.Runtime);
 
                 var client = new RestClient($"{OnlineClient.API_ENDPOINT}");
-                client.DownloadData(new RestRequest($"{OnlineClient.API_ENDPOINT}/d/web/map/{outdated.MapId}", Method.GET)).SaveAs(path);
+                ApiRequestExecutor.Execute(client,
+                    new RestRequest($"{OnlineClient.API_ENDPOINT}/d/web/map/{outdated.MapId}", Method.GET),
+                    message => Logger.Error(message, LogType.Network)).RawBytes.SaveAs(path);
 
                 Logger.Important($"Successfully downloaded latest version of map: {outdated.Id}", LogType.Runtime);
 

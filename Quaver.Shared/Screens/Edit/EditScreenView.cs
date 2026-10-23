@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ImGuiNET;
 using Microsoft.Xna.Framework;
 using Quaver.API.Enums;
@@ -13,6 +14,7 @@ using Quaver.Shared.Graphics.Graphs;
 using Quaver.Shared.Graphics.Menu.Border;
 using Quaver.Shared.Helpers;
 using Quaver.Shared.Scheduling;
+using Quaver.Shared.Screens.Edit.Plugins;
 using Quaver.Shared.Screens.Edit.UI.AutoMods;
 using Quaver.Shared.Screens.Edit.UI.Footer;
 using Quaver.Shared.Screens.Edit.UI.Menu;
@@ -29,6 +31,7 @@ using Wobble;
 using Wobble.Bindables;
 using Wobble.Graphics;
 using Wobble.Graphics.Animations;
+using Wobble.Graphics.ImGUI;
 using Wobble.Graphics.Sprites;
 using Wobble.Graphics.UI;
 using Wobble.Graphics.UI.Buttons;
@@ -98,7 +101,22 @@ namespace Quaver.Shared.Screens.Edit
 
         /// <summary>
         /// </summary>
-        public bool IsImGuiHovered { get; private set; }
+        public bool IsImGuiHovered => IsImGuiMouseCaptured || IsImGuiKeyboardCaptured;
+
+        /// <summary>
+        ///     Whether an ImGui context currently owns or requests mouse input.
+        /// </summary>
+        public bool IsImGuiMouseCaptured { get; private set; }
+
+        /// <summary>
+        ///     Whether an ImGui context currently owns or requests keyboard input.
+        /// </summary>
+        public bool IsImGuiKeyboardCaptured { get; private set; }
+
+        /// <summary>
+        ///     The back-to-front draw order of editor plugins.
+        /// </summary>
+        private List<IEditorPlugin> PluginDrawOrder { get; }
 
         /// <summary>
         ///     Saves the layout of current windows when the screen is exited
@@ -116,6 +134,8 @@ namespace Quaver.Shared.Screens.Edit
         /// <param name="screen"></param>
         public EditScreenView(Screen screen) : base(screen)
         {
+            PluginDrawOrder = new List<IEditorPlugin>(EditScreen.Plugins);
+
             if (ConfigManager.FpsLimiterType.Value == FpsLimitType.Custom &&
                 ConfigManager.CustomFpsLimit.Value > MaximumCustomFps)
             {
@@ -172,7 +192,8 @@ namespace Quaver.Shared.Screens.Edit
             GameBase.Game.GraphicsDevice.Clear(Color.Black);
             Container?.Draw(gameTime);
 
-            IsImGuiHovered = false;
+            IsImGuiMouseCaptured = false;
+            IsImGuiKeyboardCaptured = false;
 
             if (MenuBar != null && !EditScreen.Exiting)
             {
@@ -182,11 +203,14 @@ namespace Quaver.Shared.Screens.Edit
                 MenuBar?.Draw(gameTime);
                 GameBase.Game.TryEndBatch();
 
-                if (ImGui.IsAnyItemHovered())
-                    IsImGuiHovered = true;
+                if (ImGui.IsAnyItemHovered() || ImGui.IsAnyItemActive() || ImGui.IsAnyItemFocused())
+                {
+                    IsImGuiMouseCaptured = true;
+                    IsImGuiKeyboardCaptured = true;
+                }
             }
 
-            Button.IsGloballyClickable = !IsImGuiHovered;
+            Button.IsGloballyClickable = !IsImGuiMouseCaptured;
         }
 
         /// <inheritdoc />
@@ -235,7 +259,8 @@ namespace Quaver.Shared.Screens.Edit
             EditScreen.Track, EditScreen.BeatSnap, EditScreen.PlayfieldScrollSpeed, EditScreen.AnchorHitObjectsAtMidpoint,
             EditScreen.ScaleScrollSpeedWithRate, EditScreen.BeatSnapColor, EditScreen.ObjectColoring, EditScreen.CompositionTool,
             EditScreen.LongNoteOpacity, EditScreen.SelectedHitObjects, EditScreen.SelectedLayer, EditScreen.DefaultLayer,
-            EditScreen.PlaceObjectsOnNearestTick, EditScreen.ShowWaveform, EditScreen.ShowSpectrogram, EditScreen.AudioDirection, EditScreen.WaveformFilter, EditScreen.SpectrogramFftSize)
+            EditScreen.PlaceObjectsOnNearestTick, EditScreen.ShowWaveform, EditScreen.ShowSpectrogram,
+            EditScreen.ShowBookmarks, EditScreen.AudioDirection, EditScreen.WaveformFilter, EditScreen.SpectrogramFftSize)
         { Parent = Container };
 
         /// <summary>
@@ -306,7 +331,8 @@ namespace Quaver.Shared.Screens.Edit
                 EditScreen.AnchorHitObjectsAtMidpoint, EditScreen.ScaleScrollSpeedWithRate,
                 EditScreen.BeatSnapColor, EditScreen.ObjectColoring, EditScreen.CompositionTool, EditScreen.LongNoteOpacity,
                 EditScreen.SelectedHitObjects, EditScreen.SelectedLayer, EditScreen.DefaultLayer, EditScreen.PlaceObjectsOnNearestTick,
-                EditScreen.ShowWaveform, EditScreen.ShowSpectrogram, EditScreen.AudioDirection, EditScreen.WaveformFilter, EditScreen.SpectrogramFftSize, true)
+                EditScreen.ShowWaveform, EditScreen.ShowSpectrogram, EditScreen.ShowBookmarks, EditScreen.AudioDirection,
+                EditScreen.WaveformFilter, EditScreen.SpectrogramFftSize, true)
             {
                 Parent = Container,
                 Alignment = Alignment.TopCenter
@@ -334,6 +360,9 @@ namespace Quaver.Shared.Screens.Edit
 
             // Makes it so that the playfield bookmark tooltips appear above reference difficulty
             Playfield.Parent = Container;
+
+            // Keep the selection rectangle above both playfields and their hit objects.
+            Selector.Parent = Container;
         }
 
         /// <summary>
@@ -394,18 +423,41 @@ namespace Quaver.Shared.Screens.Edit
         /// <param name="gameTime"></param>
         private void DrawPlugins(GameTime gameTime)
         {
-            for (var i = 0; i < EditScreen.Plugins.Count; i++)
+            IEditorPlugin activatedPlugin = null;
+
+            for (var i = 0; i < PluginDrawOrder.Count; i++)
             {
-                var plugin = EditScreen.Plugins[i];
+                var plugin = PluginDrawOrder[i];
 
                 if (!plugin.IsActive)
                     continue;
 
                 plugin.Draw(gameTime);
 
+                if (plugin is SpriteImGui { WasActivatedByMouse: true })
+                    activatedPlugin = plugin;
+
                 if (ImGui.IsAnyItemHovered() || plugin.IsWindowHovered)
-                    IsImGuiHovered = true;
+                {
+                    IsImGuiMouseCaptured = true;
+                    IsImGuiKeyboardCaptured = true;
+                }
+
+                if (plugin is not SpriteImGui imgui)
+                    continue;
+
+                if (imgui.IsMouseHovered || imgui.IsMouseInputOwner || imgui.WantsMouseInput)
+                    IsImGuiMouseCaptured = true;
+
+                if (imgui.IsMouseHovered || imgui.IsMouseInputOwner || imgui.WantsKeyboardInput)
+                    IsImGuiKeyboardCaptured = true;
             }
+
+            if (activatedPlugin == null || PluginDrawOrder[^1] == activatedPlugin)
+                return;
+
+            PluginDrawOrder.Remove(activatedPlugin);
+            PluginDrawOrder.Add(activatedPlugin);
         }
 
         /// <summary>

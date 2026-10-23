@@ -86,7 +86,7 @@ namespace Quaver.Shared.Screens.Gameplay.UI.Counter
 
             var skin = SkinManager.Skin.Keys[parentDisplay.Screen.Map.Mode];
 
-            SpriteText = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold), JudgementHelper.JudgementToShortName(j), 0, false)
+            SpriteText = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold), JudgementHelper.JudgementToShortName(j), 0, false)
             {
                 Alignment = Alignment.MidCenter,
                 Parent = this,
@@ -106,7 +106,8 @@ namespace Quaver.Shared.Screens.Gameplay.UI.Counter
         {
             // Make sure the color is always tweening down back to its inactive one.
             if (SkinManager.Skin.Keys[ParentDisplay.Screen.Map.Mode].JudgementCounterFadeToAlpha)
-                FadeTo(0, Wobble.Graphics.Animations.Easing.Linear, 360);
+                // FadeTo(0, Wobble.Graphics.Animations.Easing.Linear, 360);
+                Alpha = Microsoft.Xna.Framework.MathHelper.Lerp(Alpha, 0, (float)System.Math.Min(gameTime.ElapsedGameTime.TotalMilliseconds / 360, 1));
             else
                 FadeToColor(InactiveColor, gameTime.ElapsedGameTime.TotalMilliseconds, 360);
 

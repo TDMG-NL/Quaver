@@ -70,6 +70,11 @@ namespace Quaver.Shared.Graphics.Overlays.Volume
         }
 
         /// <summary>
+        ///     Reveals the volume controller without changing the currently selected volume value.
+        /// </summary>
+        public void Show() => TimeInactive = 0;
+
+        /// <summary>
         /// </summary>
         /// <param name="gameTime"></param>
         public override void Update(GameTime gameTime)
@@ -104,12 +109,12 @@ namespace Quaver.Shared.Graphics.Overlays.Volume
 
                 if (i == 0)
                 {
-                    slider.Y = 16;
+                    slider.Y = 12;
                     continue;
                 }
 
                 var previous = Sliders[i - 1];
-                slider.Y = previous.Y + previous.Height - 14;
+                slider.Y = previous.Y + previous.Height - 18;
             }
         }
 

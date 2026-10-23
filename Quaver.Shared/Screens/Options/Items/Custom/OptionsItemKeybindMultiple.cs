@@ -65,6 +65,7 @@ namespace Quaver.Shared.Screens.Options.Items.Custom
             };
 
             ResetButton.SetIcon(UserInterface.HubDownloadRetry, new Vector2(20, 20));
+            ResetButton.SetChildrenAlpha = false;
 
             ResetButton.Clicked += (sender, args) =>
             {
@@ -108,7 +109,7 @@ namespace Quaver.Shared.Screens.Options.Items.Custom
                 Text.Tint = Colors.MainAccent;
             };
 
-            Text = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold), "", 22)
+            Text = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold), "", 22)
             {
                 Parent = Button,
                 UsePreviousSpriteBatchOptions = true,

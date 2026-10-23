@@ -6,6 +6,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Quaver.API.Enums;
+using Wobble.Managers;
 using Quaver.API.Maps;
 using Quaver.API.Maps.Structures;
 using Quaver.Shared.Assets;
@@ -115,6 +116,10 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
         /// <summary>
         /// </summary>
         private Bindable<bool> ShowSpectrogram { get; }
+
+        /// <summary>
+        /// </summary>
+        private Bindable<bool> ShowBookmarks { get; }
 
         /// <summary>
         /// </summary>
@@ -331,6 +336,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
         /// <param name="placeObjectsOnNearestTick"></param>
         /// <param name="showWaveform"></param>
         /// <param name="showSpectrogram"></param>
+        /// <param name="showBookmarks"></param>
         /// <param name="waveFormAudioDirection"></param>
         /// <param name="waveformFilter"></param>
         /// <param name="spectrogramFftSize"></param>
@@ -343,7 +349,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
             BindableInt longNoteOpacity, BindableList<HitObjectInfo> selectedHitObjects,
             Bindable<EditorLayerInfo> selectedLayer,
             EditorLayerInfo defaultLayer, Bindable<bool> placeObjectsOnNearestTick, Bindable<bool> showWaveform,
-            Bindable<bool> showSpectrogram,
+            Bindable<bool> showSpectrogram, Bindable<bool> showBookmarks,
             Bindable<EditorPlayfieldWaveformAudioDirection> waveFormAudioDirection,
             Bindable<EditorPlayfieldWaveformFilter> waveformFilter,
             BindableInt spectrogramFftSize,
@@ -368,6 +374,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
             PlaceObjectsOnNearestTick = placeObjectsOnNearestTick;
             ShowWaveform = showWaveform;
             ShowSpectrogram = showSpectrogram;
+            ShowBookmarks = showBookmarks;
             WaveFormAudioDirection = waveFormAudioDirection;
             WaveformFilter = waveformFilter;
             SpectrogramFftSize = spectrogramFftSize;
@@ -503,7 +510,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
 
             try
             {
-                GameBase.Game.SpriteBatch.End();
+                GameBase.Game.EndBatch();
             }
             catch (Exception)
             {
@@ -512,7 +519,8 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
 
             var transformMatrix = Matrix.CreateTranslation(0, TrackPositionY, 0) * WindowManager.Scale;
 
-            GameBase.Game.SpriteBatch.Begin(SpriteSortMode.Deferred, BlendState.NonPremultiplied, null, null, null, null, transformMatrix);
+            GameBase.Game.BeginBatch(SpriteSortMode.Deferred, BlendState.NonPremultiplied, null, null, null, null,
+                transformMatrix);
 
             Timeline.Draw(gameTime);
 
@@ -526,7 +534,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
 
             DrawHitObjects(gameTime);
 
-            GameBase.Game.SpriteBatch.End();
+            GameBase.Game.EndBatch();
 
             // Draw the button on top of the hitobjects because it serves as a dimming
             Button.Draw(gameTime);
@@ -684,7 +692,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
 
         /// <summary>
         /// </summary>
-        private void CreateLineContainer() => LineContainer = new EditorPlayfieldLineContainer(this, Map, Track, ActionManager);
+        private void CreateLineContainer() => LineContainer = new EditorPlayfieldLineContainer(this, Map, Track, ActionManager, ShowBookmarks);
 
         /// <summary>
         /// </summary>
@@ -702,7 +710,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
             if (IsUneditable)
                 return;
 
-            LoadingWaveform = new LoadingWheelText(18, "Loading Waveform...")
+            LoadingWaveform = new LoadingWheelText(18, LocalizationManager.Get("Screen_Editor_LoadingWaveform"))
             {
                 Alignment = Alignment.TopCenter,
                 Y = 200,
@@ -741,7 +749,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
             if (IsUneditable)
                 return;
 
-            LoadingSpectrogram = new LoadingWheelText(18, "Loading Spectrogram...")
+            LoadingSpectrogram = new LoadingWheelText(18, LocalizationManager.Get("Screen_Editor_LoadingSpectrogram"))
             {
                 Alignment = Alignment.TopCenter,
                 Y = 200,
@@ -1331,7 +1339,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield
                 return;
 
             var view = (EditScreenView)ActionManager.EditScreen.View;
-            if (view.IsImGuiHovered)
+            if (view.IsImGuiMouseCaptured)
                 return;
 
             if (!Button.IsHeld)

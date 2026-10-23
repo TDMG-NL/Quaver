@@ -9,10 +9,9 @@ using Quaver.API.Helpers;
 using Quaver.API.Maps;
 using Quaver.API.Maps.Structures;
 using Quaver.Shared.Helpers;
-using Quaver.Shared.Screens.Edit.Actions.TimingGroups.Rename;
-using Wobble;
 using Wobble.Graphics.ImGUI;
 using Wobble.Input;
+using Wobble.Managers;
 using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
 
@@ -29,7 +28,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
         /// <inheritdoc />
         /// <summary>
         /// </summary>
-        public string Name { get; } = "Scroll Speed Factor Editor";
+        public string Name { get; } = LocalizationManager.Get("Screen_Editor_ScrollSpeedFactorEditor");
 
         /// <inheritdoc />
         /// <summary>
@@ -108,7 +107,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
         /// <summary>
         /// </summary>
         /// <param name="screen"></param>
-        public EditorScrollSpeedFactorPanel(EditScreen screen) : base(false, EditorImGuiOptions.GetOptions(14), screen.ImGuiScale)
+        public EditorScrollSpeedFactorPanel(EditScreen screen) : base(false, EditorImGuiOptions.GetOptions(), screen.ImGuiScale)
         {
             Screen = screen;
             Initialize();
@@ -140,7 +139,8 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
             ImGui.SetNextWindowSizeConstraints(new Vector2(356, 0), new Vector2(600, float.MaxValue));
             ImGui.PushFont(Options.Fonts.First().Context);
             ((IColoredImGuiTitle)this).ImGuiPushTitleColors();
-            ImGui.Begin(Name);
+            var open = IsActive;
+            ImGui.Begin(Name, ref open);
 
             DrawHeaderText();
             ImGui.Dummy(new Vector2(0, 10));
@@ -175,6 +175,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
 
             ImGui.End();
             ((IColoredImGuiTitle)this).ImGuiPopTitleColors();
+            IsActive = open;
         }
 
         private void DrawTabBar()
@@ -256,17 +257,14 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
         /// </summary>
         private void DrawHeaderText()
         {
-            ImGui.TextWrapped(
-                "Scroll Speed Factors (SSF) allow you to scale the distance from the notes to the receptor directly");
-            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1), "(Help)");
+            ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_ScrollSpeedFactorHelp"));
+            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1), LocalizationManager.Get("Screen_Editor_HelpLink"));
             if (ImGui.IsItemHovered())
             {
                 ImGui.BeginTooltip();
                 ImGui.PushTextWrapPos(300);
-                ImGui.TextWrapped("SSF is a multiplier to your current scroll speed. " +
-                                  "The entries you add will be linearly transformed from one to another, like keyframes.");
-                ImGui.TextWrapped(
-                    "You can click on an individual SSF point to edit it and double-click to go to its position in time.");
+                ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_ScrollSpeedFactorMultiplierHelp"));
+                ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_ScrollPointInteractionHelp", LocalizationManager.Get("Screen_Editor_Ssf")));
                 ImGui.PopTextWrapPos();
                 ImGui.EndTooltip();
             }
@@ -276,13 +274,13 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
 
         private static void ShowDifferenceText()
         {
-            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1), "(Difference from SV)");
+            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1),
+                LocalizationManager.Get("Screen_Editor_DifferenceFromSv"));
             if (ImGui.IsItemHovered())
             {
                 ImGui.BeginTooltip();
                 ImGui.PushTextWrapPos(300);
-                ImGui.TextWrapped("SV will not move the notes but only change its speed, " +
-                                  "whereas SSF will directly change both their position and speed");
+                ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_SvVsSsfTooltip"));
                 ImGui.PopTextWrapPos();
                 ImGui.EndTooltip();
             }
@@ -292,7 +290,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
         /// </summary>
         private void DrawAddButton()
         {
-            if (ImGui.Button("Add"))
+            if (ImGui.Button(LocalizationManager.Get("Screen_Editor_Add")))
             {
                 var currentPoint = SelectedScrollGroup.GetScrollSpeedFactorAt(Screen.Track.Time);
                 var multiplier = currentPoint?.Multiplier ?? 1;
@@ -312,7 +310,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
         /// </summary>
         private void DrawRemoveButton()
         {
-            if (ImGui.Button("Remove"))
+            if (ImGui.Button(LocalizationManager.Get("Screen_Editor_Remove")))
             {
                 if (SelectedScrollSpeedFactors.Count == 0)
                     return;
@@ -348,7 +346,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
         /// </summary>
         private void DrawSelectCurrentSSFButton()
         {
-            if (ImGui.Button("Select current SSF"))
+            if (ImGui.Button(LocalizationManager.Get("Screen_Editor_SelectCurrentScrollPoint", LocalizationManager.Get("Screen_Editor_Ssf"))))
             {
                 var currentPointIndex = SelectedScrollGroup.ScrollSpeedFactors.IndexAtTime((float)Screen.Track.Time);
                 if (currentPointIndex >= 0)
@@ -389,8 +387,7 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
             {
                 ImGui.BeginTooltip();
                 ImGui.PushTextWrapPos(ImGui.GetFontSize() * 25);
-                ImGui.Text(
-                    "This will select the SSF at the current editor timestamp. If Ctrl is held, it will add it to your selection instead. If Shift is held, it will select all SSFs up to that range, if one is selected already.");
+                ImGui.Text(LocalizationManager.Get("Screen_Editor_SelectCurrentScrollPointTooltip", LocalizationManager.Get("Screen_Editor_Ssf")));
                 ImGui.PopTextWrapPos();
                 ImGui.EndTooltip();
             }
@@ -403,6 +400,8 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
             var time = 0f;
             var format = "";
 
+            const float minTime = -100_000;
+
             if (SelectedScrollSpeedFactors.Count == 1)
             {
                 var point = SelectedScrollSpeedFactors.First();
@@ -411,18 +410,15 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
                 format = $"{time}";
             }
 
-            ImGui.TextWrapped("Time");
+            ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_Time"));
 
-            if (ImGui.InputFloat("", ref time, 1, 0.1f, format,
-                    ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll))
+            if (ImGui.InputFloat("##Time", ref time, 1, 0.1f, format,
+                    ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.CharsDecimal))
             {
-                if (SelectedScrollSpeedFactors.Count == 1)
-                {
-                    var ssf = SelectedScrollSpeedFactors.First();
+                var ssf = SelectedScrollSpeedFactors.First();
 
-                    Screen.ActionManager.ChangeScrollSpeedFactorOffsetBatch(new List<ScrollSpeedFactorInfo> { ssf },
-                        time - ssf.StartTime);
-                }
+                Screen.ActionManager.ChangeScrollSpeedFactorOffsetBatch(new List<ScrollSpeedFactorInfo> { ssf },
+                    Math.Max(time - ssf.StartTime, minTime));
             }
         }
 
@@ -433,9 +429,9 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
             var time = 0f;
             var format = "";
 
-            ImGui.TextWrapped("Move Times By");
+            ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_MoveTimesBy"));
 
-            if (ImGui.InputFloat("   ", ref time, 1, 0.1f, format, ImGuiInputTextFlags.EnterReturnsTrue))
+            if (ImGui.InputFloat("##MoveTimesBy", ref time, 1, 0.1f, format, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CharsDecimal))
                 Screen.ActionManager.ChangeScrollSpeedFactorOffsetBatch(
                     new List<ScrollSpeedFactorInfo>(SelectedScrollSpeedFactors), time);
         }
@@ -446,6 +442,8 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
         {
             var multiplier = 0f;
             var format = "";
+
+            const float maxSsf = 1000;
 
             if (SelectedScrollSpeedFactors.Count == 1)
             {
@@ -462,12 +460,12 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
                 format = $"{multiplier}";
             }
 
-            ImGui.TextWrapped("Multiplier");
+            ImGui.TextWrapped(LocalizationManager.Get("Screen_Editor_Multiplier"));
 
-            if (ImGui.InputFloat(" ", ref multiplier, 1, 0.1f, format,
-                    ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll))
+            if (ImGui.InputFloat("##Multiplier", ref multiplier, 1, 0.1f, format,
+                    ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.CharsDecimal))
                 Screen.ActionManager.ChangeScrollSpeedFactorMultiplierBatch(
-                    new List<ScrollSpeedFactorInfo>(SelectedScrollSpeedFactors), multiplier);
+                    new List<ScrollSpeedFactorInfo>(SelectedScrollSpeedFactors), Math.Clamp(multiplier, -maxSsf, maxSsf));
         }
 
         /// <summary>
@@ -475,7 +473,9 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
         private void DrawSelectedCountLabel()
         {
             var count = SelectedScrollSpeedFactors.Count;
-            var labelText = count > 1 ? $"{count} scroll speed factors selected" : "";
+            var labelText = count > 1
+                ? LocalizationManager.Get("Screen_Editor_ScrollSpeedFactorsSelected", count)
+                : "";
             ImGui.Text(labelText);
         }
 
@@ -490,8 +490,8 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
             }
 
             ImGui.TableSetupScrollFreeze(0, 1);
-            ImGui.TableSetupColumn("Time");
-            ImGui.TableSetupColumn("Multiplier");
+            ImGui.TableSetupColumn(LocalizationManager.Get("Screen_Editor_Time"));
+            ImGui.TableSetupColumn(LocalizationManager.Get("Screen_Editor_Multiplier"));
             ImGui.TableHeadersRow();
             if ((NeedsToScrollToFirstSelectedSv.HasValue || NeedsToScrollToLastSelectedSv.HasValue) &&
                 SelectedScrollSpeedFactors.Count != 0 &&
@@ -689,7 +689,8 @@ namespace Quaver.Shared.Screens.Edit.Plugins.Timing
             {
                 var point = new ScrollSpeedFactorInfo()
                 {
-                    StartTime = obj.StartTime + difference, Multiplier = obj.Multiplier
+                    StartTime = obj.StartTime + difference,
+                    Multiplier = obj.Multiplier
                 };
 
                 clonedObjects.Add(point);

@@ -31,6 +31,7 @@ using Wobble.Graphics;
 using Wobble.Graphics.Animations;
 using Wobble.Graphics.Sprites;
 using Wobble.Graphics.Sprites.Text;
+using Wobble.Logging;
 using Wobble.Managers;
 using Wobble.Window;
 
@@ -81,7 +82,7 @@ namespace Quaver.Shared.Screens.Gameplay.Rulesets.Keys.Playfield
         /// <summary>
         ///     The HitPositionOverlay of the stage.
         /// </summary>
-        public Sprite HitPositionOverlay { get; private set; }
+        public List<Sprite> HitPositionOverlays { get; private set; } = [];
 
         /// <summary>
         ///     The list of receptors
@@ -317,6 +318,11 @@ namespace Quaver.Shared.Screens.Gameplay.Rulesets.Keys.Playfield
             };
         }
 
+        private record HitPositionOverlayParams(float Y, bool Reverse, int WidthKeys)
+        {
+            public int WidthKeys { get; set; } = WidthKeys;
+        }
+
         /// <summary>
         ///     Creates the HitPositionOverlay for the stage.
         /// </summary>
@@ -325,43 +331,48 @@ namespace Quaver.Shared.Screens.Gameplay.Rulesets.Keys.Playfield
             // Create Stage HitPosition Overlay
             var sizeY = Skin.StageHitPositionOverlay.Height * Playfield.Width / Skin.StageHitPositionOverlay.Width;
             var offsetY = Playfield.LaneSize * ((float)Skin.NoteReceptorsUp[0].Height / Skin.NoteReceptorsUp[0].Width);
-            var width = Playfield.Width;
+            var playfieldWidth = Playfield.Width;
 
-            float y;
-            switch (GameplayRulesetKeys.ScrollDirection)
+            List<HitPositionOverlayParams> lines = [];
+            var keys = Playfield.ReceptorPositionY.Length;
+
+            foreach ((ScrollDirection direction, float receptorPositionY) in ScrollDirectionHelper
+                         .ExpandScrollDirections(keys,
+                             GameplayRulesetKeys.ScrollDirection).Zip(Playfield.ReceptorPositionY))
             {
-                case ScrollDirection.Down:
-                    y = Playfield.ReceptorPositionY.First() - sizeY + Skin.HitPosOffsetY;
-                    break;
-                case ScrollDirection.Up:
-                    y = Playfield.ReceptorPositionY.First() + offsetY - Skin.HitPosOffsetY;
-                    break;
-                case ScrollDirection.Split:
-                    y = Playfield.ReceptorPositionY.First() - sizeY + Skin.HitPosOffsetY;
-                    width = Playfield.Width / 2;
-
-                    var splitHitPositionOverlay = new Sprite
-                    {
-                        Parent = Playfield.ForegroundContainer,
-                        Image = Skin.StageHitPositionOverlay,
-                        Rotation = MathF.PI,
-                        Size = new ScalableVector2(width, sizeY),
-                        X = width,
-                        Y = Playfield.ReceptorPositionY.Last() + offsetY - Skin.HitPosOffsetY
-                    };
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
+                var line = direction == ScrollDirection.Down
+                    ? new HitPositionOverlayParams(receptorPositionY - sizeY + Skin.HitPosOffsetY,
+                        false,
+                        1)
+                    : new HitPositionOverlayParams(receptorPositionY + offsetY - Skin.HitPosOffsetY,
+                        true,
+                        1);
+                if (lines.Count == 0 || lines.Last().Y != line.Y || lines.Last().Reverse != line.Reverse)
+                {
+                    lines.Add(line);
+                }
+                else
+                {
+                    lines[^1].WidthKeys ++;
+                }
             }
 
-            HitPositionOverlay = new Sprite
+            var x = 0f;
+            foreach (var param in lines)
             {
-                Parent = Playfield.ForegroundContainer,
-                Image = Skin.StageHitPositionOverlay,
-                Rotation = GameplayRulesetKeys.ScrollDirection.Equals(ScrollDirection.Up) ? MathF.PI : 0,
-                Size = new ScalableVector2(width, sizeY),
-                Y = y
-            };
+                var width = playfieldWidth * param.WidthKeys / keys;
+                HitPositionOverlays.Add(new Sprite
+                {
+                    Parent = Playfield.ForegroundContainer,
+                    Image = Skin.StageHitPositionOverlay,
+                    Rotation = param.Reverse ? MathF.PI : 0,
+                    Size = new ScalableVector2(width, sizeY),
+                    X = x,
+                    Y = param.Y,
+                    Width = width,
+                });
+                x += width;
+            }
         }
 
         /// <summary>
@@ -413,7 +424,7 @@ namespace Quaver.Shared.Screens.Gameplay.Rulesets.Keys.Playfield
                     Size = new ScalableVector2(laneSize * scale, (Playfield.LaneSize * Skin.NoteReceptorsUp[i].Height / Skin.NoteReceptorsUp[i].Width) * scale),
                     Position = new ScalableVector2(posX, Playfield.ReceptorPositionY[i]),
                     Alignment = Alignment.TopLeft,
-                    Image = Skin.NoteReceptorsUp[i],
+                    Region = Skin.NoteReceptorsUp[i],
                     SpriteEffect = !Playfield.ScrollDirections[i].Equals(ScrollDirection.Down) && Skin.FlipNoteImagesOnUpscroll ? SpriteEffects.FlipVertically : SpriteEffects.None,
                     Rotation = Skin.RotateReceptorsByColumn ? Skin.ReceptorRotations[i] / 180f * MathF.PI : 0
                 });
@@ -641,8 +652,8 @@ namespace Quaver.Shared.Screens.Gameplay.Rulesets.Keys.Playfield
 
                 var scale = Skin.HitLightingScale / 100;
 
-                hl.Image = Skin.HitLighting.First();
-                hl.Size = new ScalableVector2(hl.Image.Width * scale, hl.Image.Height * scale);
+                hl.Region = Skin.HitLighting.First();
+                hl.Size = new ScalableVector2(hl.ImageWidth * scale, hl.ImageHeight * scale);
 
                 var pos = GraphicsHelper.AlignRect(Alignment.MidCenter, hl.RelativeRectangle,
                     Receptors[i].ScreenRectangle);
@@ -737,7 +748,7 @@ namespace Quaver.Shared.Screens.Gameplay.Rulesets.Keys.Playfield
         /// </summary>
         public void SetReceptorAndLightingActivity(int index, bool pressed)
         {
-            Receptors[index].Image = pressed ? Skin.NoteReceptorsDown[index] : Skin.NoteReceptorsUp[index];
+            Receptors[index].Region = pressed ? Skin.NoteReceptorsDown[index] : Skin.NoteReceptorsUp[index];
             ColumnLightingObjects[index].Active = pressed;
         }
 
@@ -792,7 +803,7 @@ namespace Quaver.Shared.Screens.Gameplay.Rulesets.Keys.Playfield
                 if (input.ReplayInputManager != null)
                     continue;
 
-                var keybind = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold),
+                var keybind = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold),
                     input.BindingStore[i].Key.Value.GetName(), 32)
                 {
                     Parent = Playfield.ForegroundContainer,

@@ -6,6 +6,7 @@ using MonoGame.Extended.Timers;
 using MoreLinq.Extensions;
 using Quaver.API.Helpers;
 using Quaver.API.Maps;
+using Wobble.Managers;
 using Quaver.Shared.Graphics.Notifications;
 using Quaver.Shared.Screens.Edit.Actions;
 using Quaver.Shared.Screens.Edit.Actions.Bookmarks;
@@ -17,6 +18,7 @@ using Quaver.Shared.Screens.Edit.Actions.Bookmarks.RemoveBatch;
 using Quaver.Shared.Screens.Edit.Actions.Preview;
 using Wobble;
 using Wobble.Audio.Tracks;
+using Wobble.Bindables;
 using Wobble.Graphics;
 
 namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
@@ -33,6 +35,8 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
         private IAudioTrack Track { get; }
 
         private EditorActionManager ActionManager { get; }
+
+        private Bindable<bool> ShowBookmarks { get; }
 
         /// <summary>
         ///     The cached SV/SF graph layer.
@@ -87,12 +91,15 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
         /// <param name="map"></param>
         /// <param name="track"></param>
         /// <param name="actionManager"></param>
-        public EditorPlayfieldLineContainer(EditorPlayfield playfield, Qua map, IAudioTrack track, EditorActionManager actionManager)
+        /// <param name="showBookmarks"></param>
+        public EditorPlayfieldLineContainer(EditorPlayfield playfield, Qua map, IAudioTrack track,
+            EditorActionManager actionManager, Bindable<bool> showBookmarks)
         {
             Playfield = playfield;
             Map = map;
             Track = track;
             ActionManager = actionManager;
+            ShowBookmarks = showBookmarks;
             ScrollGraph = new EditorPlayfieldScrollGraphCache(playfield, map);
 
             InitializeTicks();
@@ -124,6 +131,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
             ActionManager.TimingGroupCreated += OnScrollGraphChanged;
             ActionManager.TimingGroupDeleted += OnScrollGraphChanged;
             ActionManager.TimingGroupColorChanged += OnScrollGraphChanged;
+            ShowBookmarks.ValueChanged += OnShowBookmarksChanged;
             RemoveTimer.Tick += RemoveLines;
             RemoveTimer.Start();
         }
@@ -213,6 +221,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
             ActionManager.TimingGroupCreated -= OnScrollGraphChanged;
             ActionManager.TimingGroupDeleted -= OnScrollGraphChanged;
             ActionManager.TimingGroupColorChanged -= OnScrollGraphChanged;
+            ShowBookmarks.ValueChanged -= OnShowBookmarksChanged;
             RemoveTimer.Tick -= RemoveLines;
             
             base.Destroy();
@@ -228,6 +237,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
             foreach (var bookmark in Map.Bookmarks)
             {
                 var line = new DrawableEditorLineBookmark(Playfield, bookmark);
+                line.SetVisibility(ShowBookmarks.Value);
                 BookmarkLines.Add(line);
                 Lines.Add(line);
             }
@@ -287,7 +297,8 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
             if (!DenseLinesDetected && FrameSkipFactor > 1)
             {
                 DenseLinesDetected = true;
-                NotificationManager.Show(NotificationLevel.Warning, "Dense lines detected. Lines will be drawn less frequently.");
+                NotificationManager.Show(NotificationLevel.Warning,
+                    LocalizationManager.Get("Screen_Editor_DenseLinesDetected"));
             }
             
             if (_frameCounter++ % FrameSkipFactor != 0)
@@ -329,6 +340,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
         private void OnBookmarkAdded(object sender, EditorActionBookmarkAddedEventArgs e)
         {
             var line = new DrawableEditorLineBookmark(Playfield, e.Bookmark);
+            line.SetVisibility(ShowBookmarks.Value);
             BookmarkLines.Add(line);
             Lines.InsertSorted(line);
             InitializeLinePool();
@@ -337,6 +349,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
         private void OnBookmarkBatchAdded(object sender, EditorActionBookmarkBatchAddedEventArgs e)
         {
             var lines = e.Bookmarks.Select(bookmark => new DrawableEditorLineBookmark(Playfield, bookmark)).ToList();
+            lines.ForEach(line => line.SetVisibility(ShowBookmarks.Value));
             BookmarkLines.AddRange(lines);
             Lines.InsertSorted(lines);
             InitializeLinePool();
@@ -376,6 +389,12 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
         {
             Lines.HybridSort();
             InitializeLinePool();
+        }
+
+        private void OnShowBookmarksChanged(object sender, BindableValueChangedEventArgs<bool> e)
+        {
+            foreach (var line in BookmarkLines)
+                line.SetVisibility(e.Value);
         }
 
     }

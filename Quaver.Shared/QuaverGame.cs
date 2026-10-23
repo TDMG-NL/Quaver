@@ -41,6 +41,7 @@ using Quaver.Shared.Graphics.Overlays.Hub;
 using Quaver.Shared.Graphics.Overlays.Volume;
 using Quaver.Shared.Graphics.Transitions;
 using Quaver.Shared.Helpers;
+using Quaver.Shared.Input.Global;
 using Quaver.Shared.Localization;
 using Quaver.Shared.Online;
 using Quaver.Shared.Online.API.Imgur;
@@ -74,6 +75,7 @@ using Quaver.Shared.Screens.Tests.DrawablePlaylists;
 using Quaver.Shared.Screens.Tests.Dropdowns;
 using Quaver.Shared.Screens.Tests.Editor;
 using Quaver.Shared.Screens.Tests.FilterPanel;
+using Quaver.Shared.Screens.Tests.Flags;
 using Quaver.Shared.Screens.Tests.Jukebox;
 using Quaver.Shared.Screens.Tests.Leaderboards;
 using Quaver.Shared.Screens.Tests.LeaderboardWithMaps;
@@ -82,6 +84,9 @@ using Quaver.Shared.Screens.Tests.MapScrollContainers;
 using Quaver.Shared.Screens.Tests.ModifierSelectors;
 using Quaver.Shared.Screens.Tests.YesNoDialog;
 using Quaver.Shared.Screens.Tests.Footer;
+using Quaver.Shared.Screens.Tests.GlobalIcons;
+using Quaver.Shared.Screens.Tests.GlobalGameplayAssets;
+using Quaver.Shared.Screens.Tests.UserGroupBadges;
 using Quaver.Shared.Screens.Tests.ListenerLists;
 using Quaver.Shared.Screens.Tests.Luas;
 using Quaver.Shared.Screens.Tests.MenuJukebox;
@@ -115,7 +120,9 @@ using Wobble.IO;
 using Wobble.Logging;
 using Wobble.Managers;
 using Wobble.Platform;
+using Wobble.Timing;
 using Wobble.Window;
+using NewMainMenuScreen = Quaver.Shared.Screens.V2.Main.MainMenuScreen;
 using Version = YamlDotNet.Core.Version;
 
 namespace Quaver.Shared
@@ -159,6 +166,52 @@ namespace Quaver.Shared
         /// </summary>
         public QuaverScreen CurrentScreen { get; set; }
 
+        private readonly GlobalInputScopeToken _token;
+
+        private class Token(QuaverGame game) : GlobalInputScopeToken
+        {
+            /// <inheritdoc />
+            public override GlobalInputScope Scope => GlobalInputScope.Global;
+
+            /// <inheritdoc />
+            public override GlobalInputHandleResult Handle(GlobalKeybindActions action, bool isKeyPress = true,
+                bool isRelease = false)
+            {
+                switch (action)
+                {
+                    case GlobalKeybindActions.Screenshot:
+                        game.Screenshot();
+                        break;
+                    case GlobalKeybindActions.OpenOptions:
+                        game.OpenOptions();
+                        break;
+                    case GlobalKeybindActions.ToggleFullscreen:
+                        game.ToggleFullscreen();
+                        break;
+                    case GlobalKeybindActions.TogglePause:
+                        game.TogglePause();
+                        break;
+                    case GlobalKeybindActions.CycleFpsLimiter:
+                        game.CycleFpsLimiter();
+                        break;
+                    case GlobalKeybindActions.ToggleOnlineHub:
+                        game.ToggleOnlineHub();
+                        break;
+                    case GlobalKeybindActions.ReloadSkin:
+                        game.ReloadSkin();
+                        break;
+                    case GlobalKeybindActions.Back:
+                        return GlobalInputHandleResult.Pass;
+                    default:
+                        return GlobalInputHandleResult.Pass;
+                }
+
+                return GlobalInputHandleResult.Consumed;
+            }
+        }
+
+        public GlobalInputManager InputManager { get; } = new();
+
         /// <summary>
         ///     Unique identifier of the client's assembly version.
         /// </summary>
@@ -192,6 +245,38 @@ namespace Quaver.Shared
         private bool WindowActiveInPreviousFrame { get; set; }
 
         /// <summary>
+        ///     Used to detect when to mute/restore audio if the user's window isn't active.
+        /// </summary>
+        private bool WindowActiveInPreviousFrameForAudio { get; set; } = true;
+
+        /// <summary>
+        ///     Used to detect when to switch between gameplay/menu music volume.
+        /// </summary>
+        private bool WasUsingGameplayMusicVolumeInPreviousFrame { get; set; }
+
+        /// <summary>
+        ///     The music volume that <see cref="HandleMusicVolumeFade"/> is currently fading
+        ///     <see cref="AudioTrack.GlobalVolume"/> towards.
+        /// </summary>
+        private float TargetMusicVolume { get; set; }
+
+        /// <summary>
+        ///     The music volume the current fade started from.
+        /// </summary>
+        private float MusicVolumeFadeStart { get; set; }
+
+        /// <summary>
+        ///     How long in milliseconds the current fade has been running for.
+        /// </summary>
+        private double MusicVolumeFadeElapsed { get; set; }
+
+        /// <summary>
+        ///     How long in milliseconds it takes to fade between music volumes
+        ///     (e.g. when switching between gameplay/menu music volume or when muting).
+        /// </summary>
+        private const int MusicVolumeFadeTime = 400;
+
+        /// <summary>
         ///     FPS to use when reducing rendering for an inactive visible window.
         /// </summary>
         private const int InactiveWindowFpsLimit = 30;
@@ -208,6 +293,8 @@ namespace Quaver.Shared
         /// <summary>
         /// </summary>
         private long MacOsCocoaEventLoopLastDrawTicks { get; set; }
+
+        private readonly FramePacer FramePacer = new FramePacer();
 
         /// <summary>
         ///     Sometimes we'd like to perform actions on the first update, such as
@@ -226,6 +313,10 @@ namespace Quaver.Shared
         private Dictionary<string, Type> VisualTests { get; } = new Dictionary<string, Type>()
         {
             {"AutoMod", typeof(AutoModTestScreen)},
+            {"Flags", typeof(FlagsTestScreen)},
+            {"Global Icons", typeof(GlobalIconsTestScreen)},
+            {"Global Gameplay Assets", typeof(GlobalGameplayAssetsTestScreen)},
+            {"User Groups", typeof(UserGroupsTestScreen)},
             {"Main Menu", typeof(MainMenuScreen)},
             {"ResultsScreen (Multi)", typeof(TestResultsMultiScreen)},
             {"ResultsScreen", typeof(TestResultsScreen)},
@@ -274,7 +365,12 @@ namespace Quaver.Shared
         public QuaverGame() : base(ConfigureSdlVideoBackend())
 #endif
         {
+#if VISUAL_TESTS
+            hl.InitializeAssembly = InitializeHotReloadAssembly;
+            hl.DisposeAssembly = DisposeHotReloadAssembly;
+#endif
             Content.RootDirectory = "Content";
+            _token = new Token(this);
 
             if (Environment.GetEnvironmentVariable("QUAVER_LOGLEVEL") is null)
                 Logger.MinimumLogLevel = IsDeployedBuild ? LogLevel.Important : LogLevel.Debug;
@@ -352,16 +448,20 @@ namespace Quaver.Shared
         protected override void LoadContent()
         {
             base.LoadContent();
+            GlobalIcons.Load();
+            Flags.Load();
+            GlobalGameplayAssets.Load();
+            UserGroupAssets.Load();
 
             Logger.Important($"Currently running Quaver version: `{Version}`", LogType.Runtime);
             IsReadyToUpdate = true;
 
 #if VISUAL_TESTS
             Window.Title = $"Quaver Visual Test Runner";
-            new InitializationScreen().OnFirstUpdate();
+            QuaverScreenFactory.CreateInitialization().OnFirstUpdate();
 #else
             Window.Title = !IsDeployedBuild ? $"Quaver - {Version}" : $"Quaver v{Version}";
-            QuaverScreenManager.ScheduleScreenChange(() => new InitializationScreen(), true);
+            QuaverScreenManager.ScheduleScreenChange(() => QuaverScreenFactory.CreateInitialization(), true);
 #endif
         }
 
@@ -372,12 +472,17 @@ namespace Quaver.Shared
         /// </summary>
         protected override void UnloadContent()
         {
+            FramePacer.Dispose();
             AudioManager.OutputDeviceChanged -= OnAudioOutputDeviceChanged;
             AudioManager.ShouldSkipLostOutputDeviceCheck = null;
             ConfigManager.WriteConfigFileAsync().Wait();
             Transitioner.Dispose();
             DiscordHelper.Shutdown();
             TooltipManager.TargetEligibilityFilter = null;
+            GlobalIcons.Dispose();
+            Flags.Dispose();
+            GlobalGameplayAssets.Dispose();
+            UserGroupAssets.Dispose();
             base.UnloadContent();
 
             if (SteamManager.IsInitialized)
@@ -419,7 +524,6 @@ namespace Quaver.Shared
             DialogManager.Update(gameTime);
 
             HandleGlobalInput(gameTime);
-            HandleOnlineHubInput();
 
             NotificationManager.Update(gameTime);
             VolumeController?.Update(gameTime);
@@ -431,6 +535,8 @@ namespace Quaver.Shared
 
             SkinManager.HandleSkinReloading();
             LimitFpsOnInactiveWindow();
+            HandleMuteAudioOnWindowInactive();
+            HandleMusicVolumeFade(gameTime);
             UpdateFpsCounterPosition();
 
             Window.AllowUserResizing = QuaverWindowManager.CanChangeResolutionOnScene;
@@ -442,6 +548,13 @@ namespace Quaver.Shared
         /// </summary>
         protected override bool BeginDraw() => base.BeginDraw() && ShouldRunMacOsDraw();
 
+        protected override void EndDraw()
+        {
+            base.EndDraw();
+            // SDL pumps events next, so input and the next variable timestep include this wait.
+            FramePacer.WaitForNextFrame();
+        }
+
         /// <inheritdoc />
         /// <summary>
         ///     This is called when the game should draw itself.
@@ -451,7 +564,8 @@ namespace Quaver.Shared
             if (!IsReadyToUpdate)
                 return;
 
-            base.Draw(gameTime);
+            using (Transitioner.SuppressForegroundElements())
+                base.Draw(gameTime);
 
             // Draw dialogs
             DialogManager.Draw(gameTime);
@@ -460,11 +574,13 @@ namespace Quaver.Shared
             VolumeController?.Draw(gameTime);
             GlobalUserInterface.Draw(gameTime);
 
-            // F8 chat belongs to global UI, which draws after Wobble's normal tooltip layer.
-            if (OnlineChat?.IsOpen == true)
+            // Dialogs and F8 chat draw after Wobble's normal tooltip layer, so active tooltips
+            // must be redrawn above them.
+            if (DialogManager.Dialogs.Count > 0 || OnlineChat?.IsOpen == true)
                 TooltipManager.Draw(gameTime);
 
             Transitioner.Draw(gameTime);
+            Transitioner.DrawForegroundElements(gameTime);
 
             ClearAlphaChannel(gameTime);
         }
@@ -492,16 +608,13 @@ namespace Quaver.Shared
             MapsetImporter.WatchForChanges();
 
             // Initially set the global volume.
-            AudioTrack.GlobalVolume = ConfigManager.VolumeGlobal.Value * ConfigManager.VolumeMusic.Value / 100f;
-            AudioSample.GlobalVolume = ConfigManager.VolumeGlobal.Value * ConfigManager.VolumeEffect.Value / 100f;
+            UpdateGlobalVolume(true);
 
-            ConfigManager.VolumeGlobal.ValueChanged += (sender, e) =>
-            {
-                AudioTrack.GlobalVolume = e.Value * ConfigManager.VolumeMusic.Value / 100f;
-                AudioSample.GlobalVolume = e.Value * ConfigManager.VolumeEffect.Value / 100f;
-            };
-            ConfigManager.VolumeMusic.ValueChanged += (sender, e) => AudioTrack.GlobalVolume = ConfigManager.VolumeGlobal.Value * e.Value / 100f;
-            ConfigManager.VolumeEffect.ValueChanged += (sender, e) => AudioSample.GlobalVolume = ConfigManager.VolumeGlobal.Value * e.Value / 100f;
+            ConfigManager.VolumeGlobal.ValueChanged += (sender, e) => UpdateGlobalVolume();
+            ConfigManager.VolumeMusic.ValueChanged += (sender, e) => UpdateGlobalVolume();
+            ConfigManager.VolumeMenuMusic.ValueChanged += (sender, e) => UpdateGlobalVolume();
+            ConfigManager.VolumeEffect.ValueChanged += (sender, e) => UpdateGlobalVolume();
+            ConfigManager.MuteAudioOnWindowInactive.ValueChanged += (sender, e) => UpdateGlobalVolume();
 
             ConfigManager.Pitched.ValueChanged += (sender, e) =>
             {
@@ -598,7 +711,7 @@ namespace Quaver.Shared
         /// </summary>
         public void CreateFpsCounter()
         {
-            Fps = new FpsCounter(FontManager.GetWobbleFont(Fonts.InterBold), 18)
+            Fps = new FpsCounter(FontManager.GetWobbleFont(Fonts.InterSemiBold), 18)
             {
                 Parent = GlobalUserInterface,
                 Alignment = Alignment.BotRight,
@@ -607,14 +720,25 @@ namespace Quaver.Shared
                 Visible = false
             };
 
-            ShowFpsCounter(Fps);
-            ConfigManager.FpsCounter.ValueChanged += (o, e) => ShowFpsCounter(Fps);
+            RefreshFpsCounterVisibility();
+            ConfigManager.FpsCounter.ValueChanged += (o, e) => RefreshFpsCounterVisibility();
         }
 
         /// <summary>
-        ///     Shows the FPS counter based on the current config variable.
+        ///     Shows the FPS counter based on the current config variable and screen.
         /// </summary>
-        private static void ShowFpsCounter(FpsCounter counter) => counter.Visible = ConfigManager.FpsCounter.Value;
+        internal void RefreshFpsCounterVisibility()
+        {
+            if (Fps == null)
+                return;
+
+#if DEBUG
+            Fps.Visible = true;
+#else
+            Fps.Visible = ConfigManager.FpsCounter.Value &&
+                          !(CurrentScreen is NewMainMenuScreen);
+#endif
+        }
 
         /// <summary>
         ///     Uses a custom fps config
@@ -625,6 +749,7 @@ namespace Quaver.Shared
         public void SetFps(FpsLimitType fpsLimitType, int customFpsLimit)
         {
             MacOsCocoaEventLoopDrawLimiter = false;
+            FramePacer.SetLimit(0);
 
             switch (fpsLimitType)
             {
@@ -639,8 +764,8 @@ namespace Quaver.Shared
                         SetMacOsCocoaEventLoopDrawLimiter(240);
                     else
                     {
-                        IsFixedTimeStep = true;
-                        TargetElapsedTime = TimeSpan.FromSeconds(1d / 240d);
+                        IsFixedTimeStep = false;
+                        FramePacer.SetLimit(240);
                     }
                     WaylandVsync = false;
                     break;
@@ -664,8 +789,8 @@ namespace Quaver.Shared
                         SetMacOsCocoaEventLoopDrawLimiter(customFpsLimit);
                     else
                     {
-                        TargetElapsedTime = TimeSpan.FromSeconds(1d / customFpsLimit);
-                        IsFixedTimeStep = true;
+                        IsFixedTimeStep = false;
+                        FramePacer.SetLimit(customFpsLimit);
                     }
                     WaylandVsync = false;
                     break;
@@ -747,19 +872,11 @@ namespace Quaver.Shared
         /// <param name="gameTime"></param>
         private void HandleGlobalInput(GameTime gameTime)
         {
-            HandleKeyPressF7();
-            HandleKeyPressCtrlO();
-            HandleKeyPressCtrlS();
-            HandleKeyPressAltEnter();
-            HandleKeyPressScreenshot();
-            HandleKeyPressCtrlP();
+            InputManager.HandleInput();
         }
 
-        private void HandleKeyPressCtrlP()
+        private void TogglePause()
         {
-            if (!KeyboardManager.IsCtrlDown())
-                return;
-
             switch (CurrentScreen?.Type)
             {
                 case QuaverScreenType.Gameplay:
@@ -767,7 +884,7 @@ namespace Quaver.Shared
                     break;
                 default:
                     // Pause/Unpause music
-                    if (KeyboardManager.IsUniqueKeyPress(Keys.P) && AudioEngine.Track != null && !AudioEngine.Track.IsDisposed)
+                    if (AudioEngine.Track != null && !AudioEngine.Track.IsDisposed)
                     {
                         if (AudioEngine.Track.IsPaused)
                         {
@@ -788,12 +905,8 @@ namespace Quaver.Shared
         ///     Handles when the user presses the F7 button
         /// </summary>
         /// <exception cref="ArgumentOutOfRangeException"></exception>
-        private void HandleKeyPressF7()
+        private void CycleFpsLimiter()
         {
-            // Handles FPS limiter changes
-            if (!KeyboardManager.IsUniqueKeyPress(Keys.F7))
-                return;
-
             var availableFpsLimitTypes = GetAvailableFpsLimitTypes();
             var index = availableFpsLimitTypes.IndexOf(ConfigManager.FpsLimiterType.Value);
 
@@ -845,18 +958,12 @@ namespace Quaver.Shared
         /// <summary>
         ///     Handles when the user holds either Control (CTRL) button and presses O
         /// </summary>
-        private void HandleKeyPressCtrlO()
+        private void OpenOptions()
         {
-            if (!KeyboardManager.IsCtrlDown())
-                return;
-
-            if (!KeyboardManager.IsUniqueKeyPress(Keys.O))
-                return;
-
             if (DialogManager.Dialogs.Count > 0)
                 return;
 
-            switch (CurrentScreen.Type)
+            switch (CurrentScreen?.Type)
             {
                 case QuaverScreenType.Menu:
                 case QuaverScreenType.Select:
@@ -874,17 +981,10 @@ namespace Quaver.Shared
         /// <summary>
         ///    Handles when the user holds Control, Shift and Alt, and presses R
         /// </summary>
-        private void HandleKeyPressCtrlS()
+        private void ReloadSkin()
         {
-            // Check for modifier keys
-            if (!KeyboardManager.IsCtrlDown())
-                return;
-
-            if (!KeyboardManager.IsUniqueKeyPress(Keys.S))
-                return;
-
             // Handle skin reloading
-            switch (CurrentScreen.Type)
+            switch (CurrentScreen?.Type)
             {
                 case QuaverScreenType.Menu:
                 case QuaverScreenType.Select:
@@ -897,17 +997,10 @@ namespace Quaver.Shared
         /// <summary>
         ///    Handles when the user holds either Alt (ALT) button and presses Enter
         /// </summary>
-        private void HandleKeyPressAltEnter()
+        private void ToggleFullscreen()
         {
             // Don't allow to change to fullscreen when playing
             if (CurrentScreen?.Type == QuaverScreenType.Gameplay)
-                return;
-
-            // Check for modifier keys
-            if (!KeyboardManager.CurrentState.IsKeyDown(Keys.LeftAlt) && !KeyboardManager.CurrentState.IsKeyDown(Keys.RightAlt))
-                return;
-
-            if (!KeyboardManager.IsUniqueKeyPress(Keys.Enter))
                 return;
 
             ConfigManager.WindowFullScreen.Value = !ConfigManager.WindowFullScreen.Value;
@@ -916,11 +1009,8 @@ namespace Quaver.Shared
         /// <summary>
         ///     Handles taking screenshots of the game when the user presses F12, and shift to upload.
         /// </summary>
-        private void HandleKeyPressScreenshot()
+        private void Screenshot()
         {
-            if (!KeyboardManager.IsUniqueKeyPress(ConfigManager.KeyScreenshot.Value))
-                return;
-
             try
             {
                 SkinManager.Skin.SoundScreenshot?.CreateChannel()?.Play();
@@ -989,6 +1079,76 @@ namespace Quaver.Shared
         }
 
         /// <summary>
+        ///     If true the current screen uses the gameplay music volume rather than the menu music volume.
+        /// </summary>
+        private bool UsesGameplayMusicVolume => CurrentScreen?.Type == QuaverScreenType.Gameplay
+                                               || CurrentScreen?.Type == QuaverScreenType.Editor;
+
+        /// <summary>
+        ///     Recalculates the global audio volume muting it if the window is inactive
+        ///     and the user has enabled that option. Uses the gameplay music volume while
+        ///     a map is actively being played or edited and the menu music volume everywhere else.
+        ///
+        ///     The music volume is eased towards its new value by <see cref="HandleMusicVolumeFade"/>
+        ///     every frame rather than being applied immediately so that switching between
+        ///     gameplay/menu music (or muting) doesn't result in a jarring instant volume jump.
+        /// </summary>
+        /// <param name="immediate">If true, skips the fade and applies the music volume instantly.</param>
+        private void UpdateGlobalVolume(bool immediate = false)
+        {
+            var muted = ConfigManager.MuteAudioOnWindowInactive.Value && !IsActive;
+            var musicVolume = UsesGameplayMusicVolume ? ConfigManager.VolumeMusic.Value : ConfigManager.VolumeMenuMusic.Value;
+            var target = muted ? 0 : ConfigManager.VolumeGlobal.Value * musicVolume / 100f;
+
+            if (immediate)
+            {
+                TargetMusicVolume = target;
+                AudioTrack.GlobalVolume = target;
+            }
+            else if (target != TargetMusicVolume)
+            {
+                MusicVolumeFadeStart = (float) AudioTrack.GlobalVolume;
+                MusicVolumeFadeElapsed = 0;
+                TargetMusicVolume = target;
+            }
+
+            AudioSample.GlobalVolume = muted ? 0 : ConfigManager.VolumeGlobal.Value * ConfigManager.VolumeEffect.Value / 100f;
+        }
+
+        /// <summary>
+        ///     Smoothly fades music volume between the current and target values over
+        ///     <see cref="MusicVolumeFadeTime"/>. The volume is calculated from elapsed
+        ///     time instead of incrementally adjusting the current volume, ensuring
+        ///     symmetric fade-in/out behavior.
+        /// </summary>
+        private void HandleMusicVolumeFade(GameTime gameTime)
+        {
+            if ((float) AudioTrack.GlobalVolume == TargetMusicVolume)
+                return;
+
+            MusicVolumeFadeElapsed += gameTime.ElapsedGameTime.TotalMilliseconds;
+
+            var progress = (float) Math.Min(MusicVolumeFadeElapsed / MusicVolumeFadeTime, 1);
+            AudioTrack.GlobalVolume = Microsoft.Xna.Framework.MathHelper.Lerp(MusicVolumeFadeStart, TargetMusicVolume, progress);
+        }
+
+        /// <summary>
+        ///     Handles muting/restoring audio when the window's active state changes and
+        ///     switching between gameplay/menu music volume when entering or leaving gameplay.
+        /// </summary>
+        private void HandleMuteAudioOnWindowInactive()
+        {
+            var usesGameplayMusicVolume = UsesGameplayMusicVolume;
+
+            if (IsActive == WindowActiveInPreviousFrameForAudio && usesGameplayMusicVolume == WasUsingGameplayMusicVolumeInPreviousFrame)
+                return;
+
+            WindowActiveInPreviousFrameForAudio = IsActive;
+            WasUsingGameplayMusicVolumeInPreviousFrame = usesGameplayMusicVolume;
+            UpdateGlobalVolume();
+        }
+
+        /// <summary>
         ///     Handles limiting the game's FPS when the window isn't active.
         /// </summary>
         private void LimitFpsOnInactiveWindow()
@@ -1033,11 +1193,8 @@ namespace Quaver.Shared
         /// <summary>
         ///     Handles input when opening the online hub
         /// </summary>
-        private void HandleOnlineHubInput()
+        private void ToggleOnlineHub()
         {
-            if (!KeyboardManager.IsUniqueKeyPress(Keys.F8) && !KeyboardManager.IsUniqueKeyPress(Keys.F9))
-                return;
-
             if (CloseOnlineHubDialog())
                 return;
 
@@ -1084,27 +1241,27 @@ namespace Quaver.Shared
             switch (CurrentScreen?.Type)
             {
                 case QuaverScreenType.Menu:
-                    CurrentScreen?.Exit(() => new MainMenuScreen());
+                    CurrentScreen?.Exit(() => QuaverScreenFactory.CreateMainMenu());
                     break;
                 case QuaverScreenType.Select:
-                    CurrentScreen?.Exit(() => new SelectionScreen());
+                    CurrentScreen?.Exit(() => QuaverScreenFactory.CreateSelection());
                     break;
                 case QuaverScreenType.Download:
-                    CurrentScreen?.Exit(() => new DownloadingScreen(CurrentScreen.Type));
+                    CurrentScreen?.Exit(() => QuaverScreenFactory.CreateDownloading(CurrentScreen.Type));
                     break;
                 case QuaverScreenType.Lobby:
-                    CurrentScreen?.Exit(() => new MultiplayerLobbyScreen());
+                    CurrentScreen?.Exit(() => QuaverScreenFactory.CreateMultiplayerLobby());
                     break;
                 case QuaverScreenType.Multiplayer:
-                    var screen = (MultiplayerGameScreen)CurrentScreen;
-                    screen.DontLeaveGameUponScreenSwitch = true;
-                    CurrentScreen?.Exit(() => new MultiplayerGameScreen());
+                    if (CurrentScreen is IMultiplayerGameScreenState multiplayerState)
+                        multiplayerState.DontLeaveGameUponScreenSwitch = true;
+                    CurrentScreen?.Exit(() => QuaverScreenFactory.CreateMultiplayerGame());
                     break;
                 case QuaverScreenType.Music:
-                    CurrentScreen?.Exit(() => new MusicPlayerScreen());
+                    CurrentScreen?.Exit(() => QuaverScreenFactory.CreateMusicPlayer());
                     break;
                 case QuaverScreenType.Theatre:
-                    CurrentScreen?.Exit(() => new TheaterScreen());
+                    CurrentScreen?.Exit(() => QuaverScreenFactory.CreateTheater());
                     break;
             }
 
@@ -1148,7 +1305,9 @@ namespace Quaver.Shared
                 if (ConfigManager.AudioOutputDevice.Value != Bass.GetDeviceInfo(i).Name)
                     continue;
 
-                AudioManager.Initialize(ConfigManager.DevicePeriod.Value, ConfigManager.DeviceBufferLengthMultiplier.Value, i);
+                var deviceBufferLength =
+                    ConfigManager.DevicePeriod.Value * ConfigManager.DeviceBufferLengthMultiplier.Value;
+                AudioManager.Initialize(ConfigManager.DevicePeriod.Value, deviceBufferLength, i);
                 break;
             }
 
@@ -1162,6 +1321,34 @@ namespace Quaver.Shared
 
 #if VISUAL_TESTS
         protected override HotLoaderScreen InitializeHotLoaderScreen() => new HotLoaderScreen(VisualTests);
+
+        private static void InitializeHotReloadAssembly(Assembly assembly)
+        {
+            InvokeHotReloadAssetMethod(assembly, typeof(GlobalIcons), nameof(GlobalIcons.Load));
+            InvokeHotReloadAssetMethod(assembly, typeof(Flags), nameof(Flags.Load));
+            InvokeHotReloadAssetMethod(assembly, typeof(GlobalGameplayAssets), nameof(GlobalGameplayAssets.Load));
+            InvokeHotReloadAssetMethod(assembly, typeof(UserGroupAssets), nameof(UserGroupAssets.Load));
+        }
+
+        private static void DisposeHotReloadAssembly(Assembly assembly)
+        {
+            InvokeHotReloadAssetMethod(assembly, typeof(GlobalIcons), nameof(GlobalIcons.Dispose));
+            InvokeHotReloadAssetMethod(assembly, typeof(Flags), nameof(Flags.Dispose));
+            InvokeHotReloadAssetMethod(assembly, typeof(GlobalGameplayAssets), nameof(GlobalGameplayAssets.Dispose));
+            InvokeHotReloadAssetMethod(assembly, typeof(UserGroupAssets), nameof(UserGroupAssets.Dispose));
+        }
+
+        private static void InvokeHotReloadAssetMethod(Assembly assembly, Type assetType, string methodName)
+        {
+            var type = assembly.GetType(assetType.FullName!);
+            var method = type?.GetMethod(methodName, BindingFlags.Static | BindingFlags.Public |
+                BindingFlags.NonPublic);
+
+            if (method == null)
+                throw new MissingMethodException(assembly.FullName, $"{assetType.FullName}.{methodName}");
+
+            method.Invoke(null, null);
+        }
 
         private void SetVisualTestingPresence()
         {

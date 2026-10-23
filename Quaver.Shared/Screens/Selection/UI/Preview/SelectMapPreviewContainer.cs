@@ -19,7 +19,6 @@ using Quaver.Shared.Helpers;
 using Quaver.Shared.Modifiers;
 using Quaver.Shared.Scheduling;
 using Quaver.Shared.Screens.Gameplay;
-using Quaver.Shared.Screens.Gameplay.Rulesets.Keys.HitObjects;
 using Quaver.Shared.Screens.Gameplay.Rulesets.Keys.Playfield;
 using Quaver.Shared.Skinning;
 using Wobble;
@@ -92,11 +91,6 @@ namespace Quaver.Shared.Screens.Selection.UI.Preview
         ///     If true, a difficulty seek bar will be created and displayed
         /// </summary>
         protected bool HasSeekBar { get; set; } = true;
-
-        /// <summary>
-        ///     If true, hit bubbles will be displayed in the preview's playfield
-        /// </summary>
-        protected virtual bool ShowHitBubbles { get; } = true;
 
         /// <summary>
         ///     The amount of delay before the task will run
@@ -240,14 +234,19 @@ namespace Quaver.Shared.Screens.Selection.UI.Preview
 
             e.Input.Qua = e.Result.Map;
 
-            LoadedGameplayScreen = e.Result;
+            var screen = e.Result;
+            screen.IsSongSelectPreviewDisplayed = ActiveLeftPanel.Value == SelectContainerPanel.MapPreview;
+            LoadedGameplayScreen = screen;
 
             AddScheduledUpdate(() =>
             {
-                var playfield = (GameplayPlayfieldKeys)LoadedGameplayScreen.Ruleset.Playfield;
+                if (!ReferenceEquals(LoadedGameplayScreen, screen) || screen.IsDisposed)
+                    return;
+
+                var playfield = (GameplayPlayfieldKeys)screen.Ruleset.Playfield;
 
                 playfield.Stage.HealthBar.Visible = false;
-                playfield.Stage.HitBubbles.Visible = ShowHitBubbles;
+                playfield.Stage.HitBubbles.Visible = false;
 
                 Wheel.ClearAnimations();
                 Wheel.FadeTo(0, Easing.Linear, 250);
@@ -263,9 +262,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Preview
                     x.StopHolding();
                 });
 
-                var scroll = ConfigManager.ScrollDirections[LoadedGameplayScreen.Map.Mode];
-
-                var skin = SkinManager.Skin.Keys[e.Result.Map.Mode];
+                var scroll = ConfigManager.ScrollDirections[screen.Map.Mode];
 
                 const int filterPanelHeight = 88;
 
@@ -274,26 +271,6 @@ namespace Quaver.Shared.Screens.Selection.UI.Preview
 
                 switch (scroll.Value)
                 {
-                    case ScrollDirection.Down:
-                    case ScrollDirection.Split:
-                        playfield.Container.Alignment = Alignment.BotLeft;
-                        playfield.Container.Y = -MenuBorder.HEIGHT - Y;
-
-                        if (playfield.Stage.HitError.Y < 0)
-                            playfield.Stage.HitError.Y *= previewMultiplier;
-
-                        if (playfield.Stage.HitBubbles.Y < 0)
-                            playfield.Stage.HitBubbles.Y *= previewMultiplier;
-
-                        if (playfield.Stage.JudgementHitBursts[0].OriginalPosY < 0)
-                            for (var i = 0; i < playfield.Stage.JudgementHitBursts.Count; i++)
-                                playfield.Stage.JudgementHitBursts[i].OriginalPosY *= previewMultiplier;
-
-                        if (playfield.Stage.ComboDisplay.OriginalPosY < 0)
-                            playfield.Stage.ComboDisplay.OriginalPosY *= previewMultiplier;
-
-                        playfield.Stage.ComboDisplay.Y = playfield.Stage.ComboDisplay.OriginalPosY;
-                        break;
                     case ScrollDirection.Up:
                         playfield.Container.Alignment = Alignment.TopLeft;
                         playfield.Stage.HitError.Y -= filterPanelHeight + MenuBorder.HEIGHT;
@@ -318,11 +295,28 @@ namespace Quaver.Shared.Screens.Selection.UI.Preview
                         playfield.Stage.ComboDisplay.Y = playfield.Stage.ComboDisplay.OriginalPosY;
                         break;
                     default:
-                        throw new ArgumentOutOfRangeException();
+                        playfield.Container.Alignment = Alignment.BotLeft;
+                        playfield.Container.Y = -MenuBorder.HEIGHT - Y;
+
+                        if (playfield.Stage.HitError.Y < 0)
+                            playfield.Stage.HitError.Y *= previewMultiplier;
+
+                        if (playfield.Stage.HitBubbles.Y < 0)
+                            playfield.Stage.HitBubbles.Y *= previewMultiplier;
+
+                        if (playfield.Stage.JudgementHitBursts[0].OriginalPosY < 0)
+                            for (var i = 0; i < playfield.Stage.JudgementHitBursts.Count; i++)
+                                playfield.Stage.JudgementHitBursts[i].OriginalPosY *= previewMultiplier;
+
+                        if (playfield.Stage.ComboDisplay.OriginalPosY < 0)
+                            playfield.Stage.ComboDisplay.OriginalPosY *= previewMultiplier;
+
+                        playfield.Stage.ComboDisplay.Y = playfield.Stage.ComboDisplay.OriginalPosY;
+                        break;
                 }
 
                 ShowTestPlayPrompt();
-                CreateSeekBar(e.Input.Qua, playfield);
+                CreateSeekBar(screen.Map, playfield);
             });
         }
 
@@ -369,9 +363,6 @@ namespace Quaver.Shared.Screens.Selection.UI.Preview
                     LoadedGameplayScreen?.HandleReplaySeeking();
                 }
 
-                if (ActiveLeftPanel.Value == SelectContainerPanel.MapPreview)
-                    LoadedGameplayScreen?.HandleAutoplayTabInput(gameTime);
-
                 LoadedGameplayScreen?.Update(gameTime);
                 IsPlayTesting.Value = !LoadedGameplayScreen?.InReplayMode ?? false;
 
@@ -393,6 +384,9 @@ namespace Quaver.Shared.Screens.Selection.UI.Preview
         /// <param name="e"></param>
         private void OnLeftPanelChanged(object sender, BindableValueChangedEventArgs<SelectContainerPanel> e)
         {
+            if (LoadedGameplayScreen != null)
+                LoadedGameplayScreen.IsSongSelectPreviewDisplayed = e.Value == SelectContainerPanel.MapPreview;
+
             if (e.Value != SelectContainerPanel.MapPreview)
                 return;
 
@@ -424,7 +418,7 @@ namespace Quaver.Shared.Screens.Selection.UI.Preview
         /// </summary>
         private void CreateTestPlayPrompt()
         {
-            TestPlayPrompt = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterBold),
+            TestPlayPrompt = new SpriteTextPlus(FontManager.GetWobbleFont(Fonts.InterSemiBold),
                 "Press [TAB] to toggle play testing", 20)
             {
                 Alignment = Alignment.TopCenter,
@@ -564,16 +558,15 @@ namespace Quaver.Shared.Screens.Selection.UI.Preview
         /// </summary>
         protected void RefreshScreen()
         {
-            if (LoadedGameplayScreen == null || LoadedGameplayScreen.IsDisposed)
+            var screen = LoadedGameplayScreen;
+
+            if (screen == null || screen.IsDisposed)
                 return;
 
-            if (LoadedGameplayScreen.InReplayMode)
-                LoadedGameplayScreen.HandleReplaySeeking();
+            if (screen.InReplayMode)
+                screen.HandleReplaySeeking();
             else
-            {
-                var hitobjectManager = (HitObjectManagerKeys)LoadedGameplayScreen.Ruleset.HitObjectManager;
-                hitobjectManager.HandleSkip();
-            }
+                screen.HandlePreviewTestPlaySeeking();
         }
 
         /// <summary>

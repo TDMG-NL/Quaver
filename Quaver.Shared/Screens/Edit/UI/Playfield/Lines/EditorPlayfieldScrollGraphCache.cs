@@ -21,7 +21,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
         private const float DefaultLineWidth = 40;
         private const float MinimumLineWidth = 10;
         private const float MaximumLineWidth = 150;
-        private const float ScrollLineHeight = 2;
+        private const float ScrollLineHeight = 1;
         private const float TimingLineHeight = 4;
         private const float SvRightPadding = 2;
 
@@ -237,7 +237,7 @@ namespace Quaver.Shared.Screens.Edit.UI.Playfield.Lines
                 graphicsDevice.SetRenderTarget(_renderTarget);
                 graphicsDevice.Clear(Color.Transparent);
 
-                GameBase.Game.SpriteBatch.Begin(SpriteSortMode.Deferred, BlendState.NonPremultiplied,
+                GameBase.Game.BeginBatch(SpriteSortMode.Deferred, BlendState.NonPremultiplied,
                     SamplerState.PointClamp, null, RasterizerState.CullNone);
 
                 DrawLines(lines, cacheEnd, trackSpeed, cacheHeight);
